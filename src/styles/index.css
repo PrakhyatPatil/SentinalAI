@@ -276,6 +276,10 @@ body {
   display: none;
 }
 
+.sidebar-collapsed-summary {
+  display: none !important;
+}
+
 /* Absolutely fill the sidebar so scrolling is always bounded */
 .sidebar-scroll {
   position: absolute;
@@ -2092,7 +2096,7 @@ body {
 
   /* Mobile Collapsed Summary Styles */
   .sidebar-collapsed-summary {
-    display: flex;
+    display: flex !important;
     flex-direction: column;
     align-items: center;
     justify-content: center;

@@ -93,10 +93,15 @@ export default function MapView({ incidents, sliderHour, segmentColors, onLocalI
 
   const onMapLoad = useCallback((map) => { mapRef.current = map; }, []);
 
+  const onMapClickRef = useRef(onMapClick);
+  useEffect(() => {
+    onMapClickRef.current = onMapClick;
+  }, [onMapClick]);
+
   const handleMapClick = useCallback((e) => {
     setReportPosition({ lat: e.latLng.lat(), lng: e.latLng.lng() });
-    if (onMapClick) onMapClick();
-  }, [onMapClick]);
+    if (onMapClickRef.current) onMapClickRef.current();
+  }, []);
 
   // ── Custom zoom controls ──────────────────────────────────────────────────
   const handleZoomIn  = () => mapRef.current?.setZoom((mapRef.current.getZoom() ?? MAP_ZOOM) + 1);

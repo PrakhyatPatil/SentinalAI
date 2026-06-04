@@ -139,10 +139,22 @@ function AppInner() {
       setDestination(dest);
       clearSummary();
       await fetchRoute(orig, dest);
-      setMobileSheetOpen(false); // Collapse sheet on mobile after route is found to show map
+      if (window.innerWidth < 768) {
+        setMobileSheetOpen(false); // Collapse sheet on mobile after route is found to show map
+      }
     },
     [fetchRoute, clearSummary]
   );
+
+  const handleMapClick = useCallback(() => {
+    if (window.innerWidth < 768) {
+      setMobileSheetOpen(false);
+    }
+  }, []);
+
+  const handleLocalIncidentAdd = useCallback((inc) => {
+    setLocalIncidents((prev) => [...prev, inc]);
+  }, []);
 
   // Fire Gemini after route+score are ready
   useEffect(() => {
@@ -223,9 +235,9 @@ function AppInner() {
             incidents={incidents}
             sliderHour={sliderHour}
             segmentColors={segmentColors}
-            onLocalIncidentAdd={(inc) => setLocalIncidents((prev) => [...prev, inc])}
+            onLocalIncidentAdd={handleLocalIncidentAdd}
             mobileSheetOpen={mobileSheetOpen}
-            onMapClick={() => setMobileSheetOpen(false)}
+            onMapClick={handleMapClick}
           />
         </div>
 
