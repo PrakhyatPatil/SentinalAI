@@ -1997,6 +1997,20 @@ body {
     left: 12px;
     right: 12px;
     padding: 0 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+  }
+
+  /* compact logo and tabs on mobile */
+  .app-header__title {
+    font-size: 16px !important;
+  }
+
+  .header-tab {
+    padding: 6px 12px !important;
+    font-size: 12px !important;
   }
 
   .app-main {
@@ -2068,6 +2082,57 @@ body {
     left: 0;
     right: 0;
     padding: 8px 16px 40px;
+    transition: opacity var(--t-fast);
+  }
+
+  .app-sidebar.closed .sidebar-scroll {
+    opacity: 0 !important;
+    pointer-events: none !important;
+  }
+
+  /* Mobile Collapsed Summary Styles */
+  .sidebar-collapsed-summary {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    top: 12px;
+    left: 16px;
+    right: 16px;
+    height: 38px;
+    cursor: pointer;
+    z-index: 10;
+    animation: fade-in var(--t-fast) both;
+  }
+
+  .collapsed-score-row {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+  }
+
+  .collapsed-score-badge {
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+  }
+
+  .collapsed-score-hint {
+    font-size: 9px;
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+
+  .collapsed-title {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-primary);
   }
 
   .legend {

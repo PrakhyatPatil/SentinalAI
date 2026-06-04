@@ -71,7 +71,7 @@ function UserDot({ heading }) {
   );
 }
 
-export default function MapView({ incidents, sliderHour, segmentColors, onLocalIncidentAdd, mobileSheetOpen }) {
+export default function MapView({ incidents, sliderHour, segmentColors, onLocalIncidentAdd, mobileSheetOpen, onMapClick }) {
   const [reportPosition, setReportPosition] = useState(null);
   const mapRef = useRef(null);
 
@@ -95,7 +95,8 @@ export default function MapView({ incidents, sliderHour, segmentColors, onLocalI
 
   const handleMapClick = useCallback((e) => {
     setReportPosition({ lat: e.latLng.lat(), lng: e.latLng.lng() });
-  }, []);
+    if (onMapClick) onMapClick();
+  }, [onMapClick]);
 
   // ── Custom zoom controls ──────────────────────────────────────────────────
   const handleZoomIn  = () => mapRef.current?.setZoom((mapRef.current.getZoom() ?? MAP_ZOOM) + 1);

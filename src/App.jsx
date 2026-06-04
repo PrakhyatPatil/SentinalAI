@@ -139,6 +139,7 @@ function AppInner() {
       setDestination(dest);
       clearSummary();
       await fetchRoute(orig, dest);
+      setMobileSheetOpen(false); // Collapse sheet on mobile after route is found to show map
     },
     [fetchRoute, clearSummary]
   );
@@ -224,6 +225,7 @@ function AppInner() {
             segmentColors={segmentColors}
             onLocalIncidentAdd={(inc) => setLocalIncidents((prev) => [...prev, inc])}
             mobileSheetOpen={mobileSheetOpen}
+            onMapClick={() => setMobileSheetOpen(false)}
           />
         </div>
 
@@ -237,6 +239,25 @@ function AppInner() {
           >
             <span className="sidebar-handle__bar" />
           </button>
+
+          {/* Mobile collapsed summary */}
+          {!mobileSheetOpen && (
+            <div className="sidebar-collapsed-summary" onClick={() => setMobileSheetOpen(true)}>
+              {riskScore !== null && waypoints.length > 0 ? (
+                <div className="collapsed-score-row">
+                  <span className="collapsed-score-badge" style={{ color: `var(--risk-${riskLabel})` }}>
+                    🛡️ {riskScore}/100 - {riskLabel.toUpperCase()}
+                  </span>
+                  <span className="collapsed-score-hint">Tap to expand safety details</span>
+                </div>
+              ) : (
+                <div className="collapsed-title">
+                  <span>🛡️ Plan Your Route</span>
+                  <span className="collapsed-score-hint">Tap to expand</span>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="sidebar-scroll">
             {activeTab === 'route' ? (
