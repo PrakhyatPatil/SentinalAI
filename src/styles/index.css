@@ -1631,7 +1631,7 @@ body {
 /* ── Report an Incident banner ── */
 .map-report-banner {
   position: absolute;
-  bottom: 80px;
+  bottom: 196px;
   left: 16px;
   display: flex;
   align-items: center;
