@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useJsApiLoader } from '@react-google-maps/api';
 
 import MapView from './components/MapView.jsx';
@@ -7,12 +7,15 @@ import TimeSlider from './components/TimeSlider.jsx';
 import RiskVerdict from './components/RiskVerdict.jsx';
 import GeminiPanel from './components/GeminiPanel.jsx';
 import SOSButton from './components/SOSButton.jsx';
+import Dashboard from './components/Dashboard.jsx';
+import NavigationPanel from './components/NavigationPanel.jsx';
 import { ErrorBoundary } from './components/ErrorBoundary.jsx';
 
 import { useIncidents } from './hooks/useIncidents.js';
 import { useRoute } from './hooks/useRoute.js';
 import { useRiskScore } from './hooks/useRiskScore.js';
 import { useGemini } from './hooks/useGemini.js';
+import { useUserLocation } from './hooks/useUserLocation.js';
 import { seedIncidentsIfNeeded } from './lib/seedData.js';
 import { FIREBASE_CONFIGURED } from './lib/firebase.js';
 
@@ -86,19 +89,31 @@ function AppInner() {
   const [mobileSheetOpen, setMobileSheetOpen] = useState(true);
   const [localIncidents, setLocalIncidents] = useState([]);
   const [activeTab, setActiveTab] = useState('route');
+  const [mapPanTarget, setMapPanTarget] = useState(null);
+  const [routesAnalyzed, setRoutesAnalyzed] = useState(0);
+
+  // User location hook for Feature 1
+  const {
+    position: userLocation,
+    loading: userLocationLoading,
+    isTracking: userIsTracking,
+    startTracking: userStartTracking,
+    centerOnUser: userCenterOnUser,
+  } = useUserLocation();
 
   const { incidents: firestoreIncidents } = useIncidents();
   // Merge Firestore incidents with locally-added ones (for offline/fallback mode)
   const incidents = [...firestoreIncidents, ...localIncidents];
 
   const {
+    directionsResult,
     waypoints,
     scoringWaypoints,
     loading: routeLoading,
     error: routeError,
     fetchRoute,
     clearRoute,
-  } = useRoute();
+  } = useRoute(incidents, sliderHour);
 
   const { riskScore, riskLabel, segmentColors, nearbyIncidents } =
     useRiskScore(waypoints, scoringWaypoints, incidents, sliderHour);
@@ -133,17 +148,34 @@ function AppInner() {
     return () => clearTimeout(timer);
   }, [sliderHour]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Geocode an address to lat/lng for map panning
+  const geocodeAndPan = useCallback((address) => {
+    if (!address || !window.google?.maps?.Geocoder) return;
+    const geocoder = new window.google.maps.Geocoder();
+    geocoder.geocode({ address, region: 'IN' }, (results, status) => {
+      if (status === 'OK' && results?.[0]?.geometry?.location) {
+        const loc = results[0].geometry.location;
+        setMapPanTarget({ lat: loc.lat(), lng: loc.lng() });
+      }
+    });
+  }, []);
+
   const handleFindRoute = useCallback(
     async (orig, dest) => {
       setOrigin(orig);
       setDestination(dest);
+      // Feature 6: Clear previous route before fetching new one
+      clearRoute();
       clearSummary();
+      // Feature 2: Pan to starting point
+      geocodeAndPan(orig);
       await fetchRoute(orig, dest);
+      setRoutesAnalyzed((prev) => prev + 1);
       if (window.innerWidth < 768) {
         setMobileSheetOpen(false); // Collapse sheet on mobile after route is found to show map
       }
     },
-    [fetchRoute, clearSummary]
+    [fetchRoute, clearRoute, clearSummary, geocodeAndPan]
   );
 
   const handleMapClick = useCallback(() => {
@@ -155,6 +187,20 @@ function AppInner() {
   const handleLocalIncidentAdd = useCallback((inc) => {
     setLocalIncidents((prev) => [...prev, inc]);
   }, []);
+
+  // Feature 1: Start tracking callback for RoutePanel
+  const handleStartTracking = useCallback((onGot) => {
+    if (userLocation) {
+      if (onGot) onGot(userLocation);
+      setMapPanTarget(userLocation);
+      return;
+    }
+    userCenterOnUser((latlng) => {
+      if (onGot) onGot(latlng);
+      setMapPanTarget(latlng);
+    });
+    if (!userIsTracking) userStartTracking();
+  }, [userLocation, userCenterOnUser, userStartTracking, userIsTracking]);
 
   // Fire Gemini after route+score are ready
   useEffect(() => {
@@ -213,6 +259,19 @@ function AppInner() {
             </svg>
             Incidents
           </button>
+          <button
+            id="tab-dashboard"
+            className={`header-tab ${activeTab === 'dashboard' ? 'header-tab--active' : ''}`}
+            onClick={() => setActiveTab('dashboard')}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+              strokeLinecap="round" strokeLinejoin="round" width="15" height="15">
+              <rect x="3" y="12" width="4" height="9" rx="1" />
+              <rect x="10" y="6" width="4" height="15" rx="1" />
+              <rect x="17" y="2" width="4" height="19" rx="1" />
+            </svg>
+            Dashboard
+          </button>
         </div>
 
         <div className="app-header__actions">
@@ -238,6 +297,8 @@ function AppInner() {
             onLocalIncidentAdd={handleLocalIncidentAdd}
             mobileSheetOpen={mobileSheetOpen}
             onMapClick={handleMapClick}
+            panTo={mapPanTarget}
+            waypoints={waypoints}
           />
         </div>
 
@@ -283,7 +344,13 @@ function AppInner() {
                   </div>
                 )}
 
-                <RoutePanel onFindRoute={handleFindRoute} loading={routeLoading} />
+                <RoutePanel
+                  onFindRoute={handleFindRoute}
+                  loading={routeLoading}
+                  userLocation={userLocation}
+                  onStartTracking={handleStartTracking}
+                  locationLoading={userLocationLoading}
+                />
 
                 {routeError && (
                   <div className="route-error">⚠️ {routeError}. Try a different route.</div>
@@ -304,10 +371,24 @@ function AppInner() {
                   </>
                 )}
 
+                {/* Feature 7: Navigation Panel */}
+                {directionsResult && waypoints.length > 0 && (
+                  <>
+                    <div className="sidebar-divider" />
+                    <NavigationPanel
+                      directionsResult={directionsResult}
+                      incidents={incidents}
+                      sliderHour={sliderHour}
+                      origin={origin}
+                      destination={destination}
+                    />
+                  </>
+                )}
+
                 <div className="sidebar-divider" />
                 <GeminiPanel summary={geminiSummary} loading={geminiLoading} />
               </>
-            ) : (
+            ) : activeTab === 'incidents' ? (
               /* ── Incidents tab ─────────────────────────────────────────── */
               <div className="incidents-list">
                 <h2 className="incidents-list__title">📍 Reported Incidents</h2>
@@ -328,6 +409,9 @@ function AppInner() {
                         <div className="incident-card__info">
                           <p className="incident-card__label">{inc.label ?? 'Reported location'}</p>
                           <p className="incident-card__type">{labels[inc.type] ?? inc.type}</p>
+                          {inc.description && (
+                            <p className="incident-card__desc">{inc.description}</p>
+                          )}
                         </div>
                         <span className="incident-card__coords">
                           {inc.lat?.toFixed(4)}, {inc.lng?.toFixed(4)}
@@ -337,6 +421,9 @@ function AppInner() {
                   })
                 )}
               </div>
+            ) : (
+              /* ── Dashboard tab ──────────────────────────────────────────── */
+              <Dashboard incidents={incidents} routesAnalyzed={routesAnalyzed} />
             )}
           </div>
         </aside>

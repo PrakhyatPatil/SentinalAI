@@ -15,9 +15,12 @@ export function getLocalIncidents() { return localIncidents; }
 
 export default function IncidentReporter({ position, onClose, onLocalAdd }) {
   const [type, setType] = useState('poor_lighting');
+  const [description, setDescription] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState(null);
+
+  const MAX_DESC_LENGTH = 500;
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -32,6 +35,7 @@ export default function IncidentReporter({ position, onClose, onLocalAdd }) {
       weight: selected.weight,
       hour: new Date().getHours(),
       label: `Reported near (${position.lat.toFixed(4)}, ${position.lng.toFixed(4)})`,
+      description: description.trim() || null,
     };
 
     // Helper: race addDoc against a 5-second timeout so we never hang
@@ -128,6 +132,29 @@ export default function IncidentReporter({ position, onClose, onLocalAdd }) {
             </label>
           ))}
         </div>
+
+        {/* Descriptive report textarea */}
+        <div className="incident-reporter__desc-group">
+          <label className="incident-reporter__desc-label" htmlFor="incident-desc">
+            📝 Describe the incident <span className="incident-reporter__optional">(optional)</span>
+          </label>
+          <textarea
+            id="incident-desc"
+            className="incident-reporter__description"
+            placeholder="What happened? Any details that could help others stay safe…"
+            value={description}
+            onChange={(e) => setDescription(e.target.value.slice(0, MAX_DESC_LENGTH))}
+            rows={3}
+            maxLength={MAX_DESC_LENGTH}
+          />
+          <div className="incident-reporter__char-count">
+            <span className={description.length >= MAX_DESC_LENGTH * 0.9 ? 'near-limit' : ''}>
+              {description.length}
+            </span>
+            /{MAX_DESC_LENGTH}
+          </div>
+        </div>
+
         <button
           type="submit"
           className="incident-reporter__submit"

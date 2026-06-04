@@ -71,9 +71,11 @@ function UserDot({ heading }) {
   );
 }
 
-export default function MapView({ incidents, sliderHour, segmentColors, onLocalIncidentAdd, mobileSheetOpen, onMapClick }) {
+export default function MapView({ incidents, sliderHour, segmentColors, onLocalIncidentAdd, mobileSheetOpen, onMapClick, panTo, waypoints }) {
   const [reportPosition, setReportPosition] = useState(null);
   const mapRef = useRef(null);
+
+  const startLocation = (waypoints && waypoints.length > 0) ? waypoints[0] : panTo;
 
   const {
     position: userPos, accuracy, heading,
@@ -90,6 +92,19 @@ export default function MapView({ incidents, sliderHour, segmentColors, onLocalI
       centeredRef.current = true;
     }
   }, [userPos]);
+
+  // Pan to external target (Feature 2: pan map to starting point)
+  const prevPanRef = useRef(null);
+  useEffect(() => {
+    if (panTo && mapRef.current) {
+      // Only pan if the target changed
+      if (!prevPanRef.current || prevPanRef.current.lat !== panTo.lat || prevPanRef.current.lng !== panTo.lng) {
+        mapRef.current.panTo(panTo);
+        mapRef.current.setZoom(15);
+        prevPanRef.current = panTo;
+      }
+    }
+  }, [panTo]);
 
   const onMapLoad = useCallback((map) => { mapRef.current = map; }, []);
 
@@ -211,6 +226,28 @@ export default function MapView({ incidents, sliderHour, segmentColors, onLocalI
       <div className="map-controls">
         <button id="zoom-in-btn"  className="map-ctrl-btn" onClick={handleZoomIn}  aria-label="Zoom in"  title="Zoom in">+</button>
         <button id="zoom-out-btn" className="map-ctrl-btn" onClick={handleZoomOut} aria-label="Zoom out" title="Zoom out">−</button>
+        
+        {startLocation && (
+          <button
+            id="pan-to-start-btn"
+            className="map-ctrl-btn map-ctrl-btn--start-loc"
+            onClick={() => {
+              if (mapRef.current) {
+                mapRef.current.panTo(startLocation);
+                mapRef.current.setZoom(15);
+              }
+            }}
+            aria-label="Pan to start location"
+            title="Pan to start location"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+              strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
+              <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
+              <line x1="4" y1="22" x2="4" y2="15" />
+            </svg>
+          </button>
+        )}
+
         <button
           id="my-location-btn"
           className={`map-ctrl-btn map-ctrl-btn--location ${isTracking ? 'active' : ''} ${locLoading ? 'loading' : ''}`}
