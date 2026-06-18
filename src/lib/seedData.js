@@ -1,5 +1,5 @@
-import { collection, getDocs, serverTimestamp, deleteDoc, doc, setDoc, writeBatch } from 'firebase/firestore';
-import { db, FIREBASE_CONFIGURED } from './firebase.js';
+import { collection, getDocs, serverTimestamp, deleteDoc, doc, setDoc, writeBatch, getDoc } from 'firebase/firestore';
+import { db, FIREBASE_CONFIGURED, authReady } from './firebase.js';
 
 /**
  * 85+ highly realistic pre-seeded incidents across Indore.
@@ -141,19 +141,24 @@ export async function seedIncidentsIfNeeded() {
     return;
   }
   try {
-    const metaRef = collection(db, 'meta');
-    const snap = await getDocs(metaRef);
-    const alreadySeeded = snap.docs.some((d) => d.id === 'seeded_v7');
-    if (alreadySeeded) {
-      console.log('[SafeRoute] Already seeded with v7 incidents.');
+    // Ensure anonymous auth has completed before writing
+    await authReady;
+    const seededDocRef = doc(db, 'meta', 'seeded');
+    const seededSnap = await getDoc(seededDocRef);
+    
+    const incidentsRef = collection(db, 'incidents');
+    const incidentsSnap = await getDocs(incidentsRef);
+
+    if (seededSnap.exists() && seededSnap.data()?.version === 'v8' && incidentsSnap.docs.length >= SEED_INCIDENTS.length) {
+      console.log('[SafeRoute] Already seeded with incidents.');
       return;
     }
 
     isSeedingInProgress = true;
-    console.log('[SafeRoute] Upgrading seed data to v7... Cleaning old incidents & writing new dense seed incidents atomically...');
+    console.log('[SafeRoute] Upgrading seed data... Cleaning old incidents & writing new dense seed incidents atomically...');
 
     const batch = writeBatch(db);
-    const incidentsRef = collection(db, 'incidents');
+    
     
     // Clear old incidents in this batch
     const existingIncidents = await getDocs(incidentsRef);
@@ -161,7 +166,7 @@ export async function seedIncidentsIfNeeded() {
       batch.delete(doc.ref);
     }
 
-    // Write all 85 new dense incidents in this batch
+    // Write all new dense incidents in this batch
     for (const incident of SEED_INCIDENTS) {
       const newDocRef = doc(incidentsRef); // generates a unique ID document reference
       batch.set(newDocRef, {
@@ -170,11 +175,10 @@ export async function seedIncidentsIfNeeded() {
       });
     }
 
-    // Mark as seeded with version 7 in this batch
-    const metaDocRef = doc(db, 'meta', 'seeded_v7');
-    batch.set(metaDocRef, {
+    // Mark as seeded in this batch
+    batch.set(seededDocRef, {
       seededAt: serverTimestamp(),
-      version: 'v7',
+      version: 'v8',
     });
 
     // Commit all deletions and insertions atomically!

@@ -14,7 +14,7 @@ import { scoreRoute } from '../lib/riskScore.js';
  *   - scoringWaypoints: lightly-sampled coordinates of the safest route (for scoring)
  *   - directionsResult: DirectionsResult filtered to contain only the selected safest route
  */
-export function useRoute(incidents, sliderHour) {
+export function useRoute(incidents, sliderHour, geminiWeights = null) {
   const [rawResult, setRawResult] = useState(null);
   const [allRouteOptions, setAllRouteOptions] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -39,7 +39,19 @@ export function useRoute(incidents, sliderHour) {
           },
           (result, status) => {
             if (status === 'OK') resolve(result);
-            else reject(new Error(`Directions API: ${status}`));
+            else {
+              // User-friendly error messages for each status
+              const messages = {
+                ZERO_RESULTS: 'No walking route found between these locations',
+                NOT_FOUND: 'One of the locations could not be found',
+                MAX_WAYPOINTS_EXCEEDED: 'Too many waypoints in the route',
+                INVALID_REQUEST: 'Invalid route request — check origin and destination',
+                OVER_QUERY_LIMIT: 'Too many requests — please wait a moment and try again',
+                REQUEST_DENIED: 'Directions API request denied — check your API key permissions',
+                UNKNOWN_ERROR: 'An unexpected error occurred — please try again',
+              };
+              reject(new Error(messages[status] || `Directions API error: ${status}`));
+            }
           }
         );
       });
@@ -89,7 +101,7 @@ export function useRoute(incidents, sliderHour) {
     let minScore = Infinity;
 
     allRouteOptions.forEach((option, idx) => {
-      const score = scoreRoute(option.scoringWaypoints, incidents, sliderHour);
+      const score = scoreRoute(option.scoringWaypoints, incidents, sliderHour, geminiWeights);
       if (score < minScore) {
         minScore = score;
         bestIdx = idx;
@@ -98,7 +110,7 @@ export function useRoute(incidents, sliderHour) {
 
     console.log(`[useRoute] Evaluated ${allRouteOptions.length} route options. Selected safest option at index ${bestIdx} (Risk Score: ${minScore})`);
     return bestIdx;
-  }, [allRouteOptions, incidents, sliderHour]);
+  }, [allRouteOptions, incidents, sliderHour, geminiWeights]);
 
   const waypoints = useMemo(() => {
     return allRouteOptions[selectedRouteIndex]?.waypoints ?? [];
@@ -117,5 +129,5 @@ export function useRoute(incidents, sliderHour) {
     };
   }, [rawResult, selectedRouteIndex]);
 
-  return { directionsResult, waypoints, scoringWaypoints, loading, error, fetchRoute, clearRoute };
+  return { directionsResult, waypoints, scoringWaypoints, allRouteOptions, loading, error, fetchRoute, clearRoute };
 }

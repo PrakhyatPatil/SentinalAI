@@ -1,5 +1,7 @@
 import React from 'react';
 import { isNightHour } from '../lib/riskScore.js';
+import ContextChip from './ContextChip.jsx';
+import AIReasoningPanel from './AIReasoningPanel.jsx';
 
 /* ── Config ─────────────────────────────────────────────────────────────────── */
 const VERDICTS = {
@@ -36,7 +38,16 @@ const TIPS = {
 };
 
 /* ── Component ───────────────────────────────────────────────────────────────── */
-export default function RiskVerdict({ score, label, nearbyIncidents = [], sliderHour }) {
+export default function RiskVerdict({
+  score,
+  label,
+  nearbyIncidents = [],
+  sliderHour,
+  contextAnalysis,
+  contextLoading,
+  riskReasoning,
+  reasoningLoading,
+}) {
   if (score === null || score === undefined) return null;
 
   const cfg   = VERDICTS[label] ?? VERDICTS.safe;
@@ -75,16 +86,31 @@ export default function RiskVerdict({ score, label, nearbyIncidents = [], slider
           </div>
         )}
 
-        {/* Score */}
+        {/* Score + Context Chip */}
         <div className="rv__score-row">
           <span className="rv__score-num">{score}</span>
           <span className="rv__score-sep">/100</span>
           <span className="rv__score-badge">{cfg.label}</span>
+          <ContextChip contextAnalysis={contextAnalysis} loading={contextLoading} />
         </div>
         <div className="rv__bar">
           <div className="rv__bar-fill" style={{ width: `${score}%` }}
             role="meter" aria-valuenow={score} aria-valuemin={0} aria-valuemax={100} />
         </div>
+        <div style={{
+          fontSize: '11px',
+          color: 'var(--text-secondary)',
+          marginTop: '8px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '4px',
+          lineHeight: '1.4',
+        }}>
+          <span style={{ color: 'var(--brand-light)' }}>✨</span> Weights dynamically adjusted by Gemini based on time and incident pattern
+        </div>
+
+        {/* AI Reasoning Panel */}
+        <AIReasoningPanel riskReasoning={riskReasoning} loading={reasoningLoading} />
 
         {/* Hazards */}
         <p className="rv__hazards-title">HAZARDS ON THIS ROUTE ({unique.length})</p>

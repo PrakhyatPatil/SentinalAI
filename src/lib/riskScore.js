@@ -20,7 +20,7 @@ export function isNightHour(hour) {
  * Returns a risk score 0–100 for the given route waypoints
  * given the current list of incidents and the slider hour.
  */
-export function scoreRoute(waypoints, incidents, sliderHour) {
+export function scoreRoute(waypoints, incidents, sliderHour, geminiWeights = null) {
   if (!waypoints || waypoints.length === 0) return 0;
 
   const MAX_PER_WAYPOINT = 25;
@@ -29,6 +29,20 @@ export function scoreRoute(waypoints, incidents, sliderHour) {
   for (const wp of waypoints) {
     const nearby = incidents.filter((i) => haversine(wp, i) <= 150);
     let wpScore = nearby.reduce((sum, i) => {
+      const id = i.id ?? i.label ?? `${i.lat},${i.lng}`;
+      let weight = null;
+      if (geminiWeights) {
+        if (geminiWeights instanceof Map) {
+          weight = geminiWeights.get(String(id));
+        } else if (typeof geminiWeights === 'object') {
+          weight = geminiWeights[id];
+        }
+      }
+
+      if (weight != null) {
+        return sum + weight;
+      }
+
       const base = BASE_WEIGHT[i.type] ?? 1;
       const mult = isNightHour(sliderHour)
         ? NIGHT_MULTIPLIER[i.type] ?? 1

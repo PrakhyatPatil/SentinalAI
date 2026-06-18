@@ -31,7 +31,13 @@ export function useUserLocation() {
   };
 
   function onSuccess(pos) {
-    setPosition({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+    const latlng = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+    try {
+      sessionStorage.setItem('saferoute_last_location', JSON.stringify(latlng));
+    } catch (e) {
+      console.warn('[useUserLocation] sessionStorage write failed:', e);
+    }
+    setPosition(latlng);
     setAccuracy(pos.coords.accuracy);
     setHeading(pos.coords.heading ?? null);
     setLoading(false);
@@ -92,6 +98,11 @@ export function useUserLocation() {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const latlng = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        try {
+          sessionStorage.setItem('saferoute_last_location', JSON.stringify(latlng));
+        } catch (e) {
+          console.warn('[useUserLocation] sessionStorage write failed:', e);
+        }
         setPosition(latlng);
         setAccuracy(pos.coords.accuracy);
         if (onGot) onGot(latlng);

@@ -1,60 +1,79 @@
 import React from 'react';
 
-export default function GeminiPanel({ summary, loading, error }) {
-  const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
+/**
+ * GeminiPanel — Rebranded as "Saheli AI · Your Safety Companion"
+ * Renders the NarrativeExplanation synthesized from all AI outputs.
+ */
+export default function GeminiPanel({ narrative, loading, error, riskScore }) {
   return (
-    <div className="gemini-panel">
+    <div className="saheli-panel">
       {/* Header */}
-      <div className="gemini-panel__header">
-        <div className="gemini-panel__icon">✨</div>
+      <div className="saheli-panel__header">
+        <div className={`saheli-panel__avatar ${loading ? 'saheli-panel__avatar--loading' : ''}`}>
+          🛡️
+        </div>
         <div>
-          <h3 className="gemini-panel__title">AI Safety Summary</h3>
-          <p className="gemini-panel__subtitle">Powered by Gemini 1.5 Flash</p>
+          <h3 className="saheli-panel__title">Saheli AI</h3>
+          <p className="saheli-panel__subtitle">Your Safety Companion</p>
         </div>
       </div>
 
       {/* Body */}
-      <div className="gemini-panel__body">
+      <div className="saheli-panel__body">
         {loading && (
-          <div className="gemini-panel__loading">
-            <div className="gemini-panel__spinner" />
-            <div className="gemini-panel__skeleton">
+          <div className="saheli-panel__loading">
+            <div className="saheli-panel__skeleton">
+              <div className="skeleton-line" style={{ width: '40%' }} />
               <div className="skeleton-line" style={{ width: '90%' }} />
               <div className="skeleton-line" style={{ width: '75%' }} />
-              <div className="skeleton-line" style={{ width: '60%' }} />
+              <div className="skeleton-line" style={{ width: '85%' }} />
+              <div className="skeleton-line skeleton-line--short" style={{ width: '50%' }} />
             </div>
           </div>
         )}
 
         {!loading && error && (
-          <p className="gemini-panel__error">
-            ⚠️ Could not reach Gemini API. Route score is still valid.
-          </p>
+          <div className="saheli-panel__error-block">
+            <p className="saheli-panel__error-title">⚠️ Saheli is momentarily unavailable</p>
+            {riskScore !== null && (
+              <p className="saheli-panel__error-score">Route score: {riskScore}/100</p>
+            )}
+            <p className="saheli-panel__error-detail">
+              Your route risk score is still valid and calculated from local incident data.
+            </p>
+          </div>
         )}
 
-        {!loading && !error && summary && (
-          <p className="gemini-panel__summary">{summary}</p>
+        {!loading && !error && narrative && (
+          <div className="saheli-panel__narrative">
+            <p className="saheli-panel__greeting">{narrative.greeting},</p>
+            <p className="saheli-panel__headline">{narrative.headline}</p>
+            <p className="saheli-panel__body-text">{narrative.body}</p>
+
+            {narrative.topWarning && (
+              <div className="saheli-panel__warning">
+                <span className="saheli-panel__warning-icon">⚠️</span>
+                <span>{narrative.topWarning}</span>
+              </div>
+            )}
+
+            <p className="saheli-panel__encouragement">{narrative.encouragement}</p>
+          </div>
         )}
 
-        {!loading && !error && !summary && (
-          <p className="gemini-panel__placeholder">
-            Enter a route and tap <strong>Find Safe Route</strong> to get an AI safety assessment.
+        {!loading && !error && !narrative && (
+          <p className="saheli-panel__placeholder">
+            Enter a route and tap <strong>Find Safe Route</strong> to get a personalized safety briefing from Saheli.
           </p>
         )}
       </div>
 
       {/* Footer */}
-      <div className="gemini-panel__footer">
-        <span className="gemini-panel__footer-dot" />
-        <span className="gemini-panel__footer-text">Data updated just now</span>
-        <button className="gemini-panel__refresh" aria-label="Refresh" title="Refresh data">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-            strokeLinecap="round" strokeLinejoin="round" width="14" height="14">
-            <polyline points="23 4 23 10 17 10" />
-            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-          </svg>
-        </button>
+      <div className="saheli-panel__footer">
+        <span className="saheli-panel__footer-dot" />
+        <span className="saheli-panel__footer-text">
+          {loading ? 'Saheli is analyzing your route…' : narrative ? 'Analysis updated just now' : 'Waiting for route'}
+        </span>
       </div>
     </div>
   );
