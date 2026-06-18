@@ -1,8 +1,8 @@
 import React from 'react';
 
 /**
- * BestTimeWidget — "Best Time to Travel" card.
- * Visible only when a route is active and ForecastData is loaded.
+ * BestTimeWidget — Shows safest/riskiest travel windows and actionable forecast.
+ * Only visible when a route is active and forecast data is loaded.
  */
 export default function BestTimeWidget({ forecast, loading }) {
   if (loading) {
@@ -10,8 +10,9 @@ export default function BestTimeWidget({ forecast, loading }) {
       <div className="best-time">
         <h3 className="best-time__title">🕐 Best Time to Travel</h3>
         <div className="best-time__loading">
+          <div className="skeleton-line" style={{ width: '80%' }} />
           <div className="skeleton-line" style={{ width: '70%' }} />
-          <div className="skeleton-line" style={{ width: '55%' }} />
+          <div className="skeleton-line" style={{ width: '90%' }} />
         </div>
       </div>
     );
@@ -19,47 +20,17 @@ export default function BestTimeWidget({ forecast, loading }) {
 
   if (!forecast) return null;
 
+  const { safestTimeWindow, riskiestTimeWindow, actionableForecast, trendSummary } = forecast;
+
+  // Check if current time is in the safest window
   const currentHour = new Date().getHours();
+  const isInSafestWindow = checkIfInWindow(currentHour, safestTimeWindow);
 
-  // Determine if current time is in the safest window
-  // Parse "9 AM – 12 PM" style strings
-  function parseWindow(windowStr) {
-    if (!windowStr) return null;
-    const match = windowStr.match(/(\d+)\s*(AM|PM)\s*[–-]\s*(\d+)\s*(AM|PM)/i);
-    if (!match) return null;
-    let start = parseInt(match[1]);
-    const startMeridiem = match[2].toUpperCase();
-    let end = parseInt(match[3]);
-    const endMeridiem = match[4].toUpperCase();
-    if (startMeridiem === 'PM' && start !== 12) start += 12;
-    if (startMeridiem === 'AM' && start === 12) start = 0;
-    if (endMeridiem === 'PM' && end !== 12) end += 12;
-    if (endMeridiem === 'AM' && end === 12) end = 0;
-    return { start, end };
-  }
-
-  const safestWindow = parseWindow(forecast.safestTimeWindow);
-  const isInSafestWindow = safestWindow &&
-    ((safestWindow.start <= safestWindow.end)
-      ? (currentHour >= safestWindow.start && currentHour < safestWindow.end)
-      : (currentHour >= safestWindow.start || currentHour < safestWindow.end));
-
-  // Determine current time risk level from predictions
-  const currentPred = forecast.predictions?.reduce((closest, p) => {
-    return Math.abs(p.hour - currentHour) < Math.abs(closest.hour - currentHour) ? p : closest;
-  }, forecast.predictions[0]);
-
-  const currentRiskLevel = !currentPred ? 'UNKNOWN'
-    : currentPred.predictedScore <= 33 ? 'LOW'
-      : currentPred.predictedScore <= 66 ? 'MODERATE'
-        : 'HIGH';
-
-  const riskLevelColor = {
-    LOW: 'var(--risk-safe)',
-    MODERATE: 'var(--risk-moderate)',
-    HIGH: 'var(--risk-high)',
-    UNKNOWN: 'var(--text-muted)',
-  };
+  // Determine current time risk level
+  const currentPrediction = forecast.predictions?.find(p => Math.abs(p.hour - currentHour) <= 1);
+  const currentRiskScore = currentPrediction?.predictedScore ?? 50;
+  const currentRiskLabel = currentRiskScore <= 33 ? 'LOW' : currentRiskScore <= 66 ? 'MODERATE' : 'HIGH';
+  const currentRiskColor = currentRiskScore <= 33 ? '#22c55e' : currentRiskScore <= 66 ? '#f59e0b' : '#ef4444';
 
   return (
     <div className="best-time">
@@ -69,31 +40,70 @@ export default function BestTimeWidget({ forecast, loading }) {
         <div className="best-time__row">
           <span className="best-time__label">Safest window:</span>
           <span className="best-time__value best-time__value--safe">
-            {forecast.safestTimeWindow} ✅
+            {safestTimeWindow} ✅
           </span>
         </div>
         <div className="best-time__row">
           <span className="best-time__label">Riskiest window:</span>
           <span className="best-time__value best-time__value--risky">
-            {forecast.riskiestTimeWindow} ⚠️
+            {riskiestTimeWindow} ⚠️
           </span>
         </div>
         <div className="best-time__row">
           <span className="best-time__label">Current time risk:</span>
-          <span
-            className="best-time__value best-time__value--level"
-            style={{ color: riskLevelColor[currentRiskLevel] }}
-          >
-            {currentRiskLevel}
+          <span className="best-time__value" style={{ color: currentRiskColor, fontWeight: 700 }}>
+            {currentRiskLabel}
           </span>
         </div>
       </div>
 
-      <div className="best-time__quote">
-        {isInSafestWindow
-          ? "✅ Good time to travel — you're in the safest window for this route."
-          : (forecast.actionableForecast || "Consider travelling during the safest window to minimize risk.")}
+      <div className="best-time__advice">
+        {isInSafestWindow ? (
+          <p className="best-time__quote best-time__quote--safe">
+            ✅ Good time to travel — you're in the safest window for this route
+          </p>
+        ) : (
+          <p className="best-time__quote">
+            "{actionableForecast || trendSummary}"
+          </p>
+        )}
       </div>
     </div>
   );
+}
+
+/**
+ * Simple heuristic to check if current hour falls in a time window string.
+ * e.g., "9 AM – 12 PM" checks if currentHour is between 9 and 12.
+ */
+function checkIfInWindow(currentHour, windowStr) {
+  if (!windowStr) return false;
+  try {
+    const parts = windowStr.split(/[–\-]/);
+    if (parts.length < 2) return false;
+
+    const startHour = parseHourString(parts[0].trim());
+    const endHour = parseHourString(parts[1].trim());
+
+    if (startHour === null || endHour === null) return false;
+
+    if (startHour <= endHour) {
+      return currentHour >= startHour && currentHour <= endHour;
+    } else {
+      // Wraps around midnight
+      return currentHour >= startHour || currentHour <= endHour;
+    }
+  } catch {
+    return false;
+  }
+}
+
+function parseHourString(str) {
+  const match = str.match(/(\d+)\s*(AM|PM)/i);
+  if (!match) return null;
+  let h = parseInt(match[1], 10);
+  const isPM = match[2].toUpperCase() === 'PM';
+  if (isPM && h !== 12) h += 12;
+  if (!isPM && h === 12) h = 0;
+  return h;
 }

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { db, auth, FIREBASE_CONFIGURED, authReady } from '../lib/firebase.js';
+import { db, auth, FIREBASE_CONFIGURED } from '../lib/firebase.js';
 import { SEED_INCIDENTS } from '../lib/seedData.js';
 
 const INCIDENT_TYPES = [
@@ -14,24 +14,16 @@ let localIncidents = [...SEED_INCIDENTS];
 export function getLocalIncidents() { return localIncidents; }
 
 export default function IncidentReporter({ position, onClose, onLocalAdd }) {
-  const [type, setType] = useState('');
+  const [type, setType] = useState('poor_lighting');
   const [description, setDescription] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState(null);
-  const [typeError, setTypeError] = useState(null);
 
   const MAX_DESC_LENGTH = 500;
 
   async function handleSubmit(e) {
     e.preventDefault();
-
-    // Inline form validation: require incident type selection
-    if (!type) {
-      setTypeError('Please select an incident type before submitting.');
-      return;
-    }
-    setTypeError(null);
     setSubmitting(true);
     setError(null);
 
@@ -59,11 +51,11 @@ export default function IncidentReporter({ position, onClose, onLocalAdd }) {
     // Try Firestore first; fall back to local state
     if (FIREBASE_CONFIGURED && db) {
       try {
-        // Ensure anonymous auth has completed before writing
-        await authReady;
+        // Ensure we have an auth user before writing
         const user = auth?.currentUser;
         if (!user) {
-          console.warn('[IncidentReporter] No auth user after waiting, using local fallback.');
+          // Auth is still initialising — skip Firestore, go straight to local
+          console.warn('[IncidentReporter] No auth user yet, using local fallback.');
         } else {
           await addDocWithTimeout(collection(db, 'incidents'), {
             ...incident,
@@ -134,23 +126,12 @@ export default function IncidentReporter({ position, onClose, onLocalAdd }) {
                 name="incident-type"
                 value={t.value}
                 checked={type === t.value}
-                onChange={() => { setType(t.value); setTypeError(null); }}
+                onChange={() => setType(t.value)}
               />
               <span>{t.label}</span>
             </label>
           ))}
         </div>
-
-        {/* Inline validation error */}
-        {typeError && (
-          <div style={{
-            fontSize: 11, color: '#ef4444', background: 'rgba(239,68,68,0.1)',
-            border: '1px solid rgba(239,68,68,0.2)', borderRadius: 6,
-            padding: '5px 8px', marginTop: 4, marginBottom: 4, lineHeight: 1.4,
-          }}>
-            ⚠️ {typeError}
-          </div>
-        )}
 
         {/* Descriptive report textarea */}
         <div className="incident-reporter__desc-group">

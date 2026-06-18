@@ -1,7 +1,8 @@
 import React from 'react';
 
 /**
- * RiskForecastChart — Pure CSS mini bar chart showing predicted risk at 7 hours.
+ * RiskForecastChart — Mini CSS-only bar chart for predicted risk levels.
+ * 7 bars for hours 6, 9, 12, 15, 18, 21, 23.
  */
 export default function RiskForecastChart({ forecast, loading }) {
   if (loading) {
@@ -9,28 +10,32 @@ export default function RiskForecastChart({ forecast, loading }) {
       <div className="risk-forecast">
         <h3 className="risk-forecast__title">📊 Risk Forecast — This Route</h3>
         <div className="risk-forecast__loading">
-          <div className="skeleton-line" style={{ width: '100%', height: '80px' }} />
+          <div className="risk-forecast__skeleton-bars">
+            {[...Array(7)].map((_, i) => (
+              <div key={i} className="risk-forecast__skeleton-bar" style={{ height: `${30 + Math.random() * 40}%` }} />
+            ))}
+          </div>
         </div>
       </div>
     );
   }
 
-  if (!forecast || !forecast.predictions || forecast.predictions.length === 0) return null;
+  if (!forecast || !forecast.predictions) return null;
 
   const predictions = forecast.predictions;
-  const maxScore = Math.max(...predictions.map((p) => p.predictedScore), 1);
-
-  function scoreColor(score) {
-    if (score <= 33) return 'var(--risk-safe)';
-    if (score <= 66) return 'var(--risk-moderate)';
-    return 'var(--risk-high)';
-  }
+  const maxScore = Math.max(1, ...predictions.map(p => p.predictedScore));
 
   function formatHour(h) {
-    if (h === 0) return '12A';
-    if (h === 12) return '12P';
-    if (h < 12) return `${h}A`;
-    return `${h - 12}P`;
+    if (h === 0) return '12AM';
+    if (h === 12) return '12PM';
+    if (h > 12) return `${h - 12}PM`;
+    return `${h}AM`;
+  }
+
+  function getBarColor(score) {
+    if (score <= 33) return '#22c55e';
+    if (score <= 66) return '#f59e0b';
+    return '#ef4444';
   }
 
   return (
@@ -38,32 +43,34 @@ export default function RiskForecastChart({ forecast, loading }) {
       <h3 className="risk-forecast__title">📊 Risk Forecast — This Route</h3>
 
       <div className="risk-forecast__chart">
-        {predictions.map((p, i) => {
-          const heightPct = Math.max((p.predictedScore / maxScore) * 100, 4);
+        {predictions.map((pred, i) => {
+          const heightPct = Math.max(5, (pred.predictedScore / maxScore) * 100);
+          const color = getBarColor(pred.predictedScore);
           return (
             <div className="risk-forecast__bar-col" key={i}>
-              <span className="risk-forecast__bar-val">{p.predictedScore}</span>
+              <div className="risk-forecast__bar-value">{pred.predictedScore}</div>
               <div
                 className="risk-forecast__bar"
                 style={{
                   height: `${heightPct}%`,
-                  background: scoreColor(p.predictedScore),
-                  animationDelay: `${i * 60}ms`,
+                  background: `linear-gradient(180deg, ${color}, ${color}88)`,
+                  animationDelay: `${i * 80}ms`,
                 }}
+                title={`${formatHour(pred.hour)}: ${pred.predictedScore}/100 (${pred.confidence} confidence)`}
               />
-              <span className="risk-forecast__bar-label">{formatHour(p.hour)}</span>
+              <div className="risk-forecast__bar-label">{formatHour(pred.hour)}</div>
             </div>
           );
         })}
       </div>
 
       <div className="risk-forecast__summary">
-        <span className="risk-forecast__window risk-forecast__window--safe">
-          Safest: {forecast.safestTimeWindow}
+        <span className="risk-forecast__safe">
+          ✅ Safest: {forecast.safestTimeWindow}
         </span>
         <span className="risk-forecast__dot">·</span>
-        <span className="risk-forecast__window risk-forecast__window--risky">
-          Riskiest: {forecast.riskiestTimeWindow}
+        <span className="risk-forecast__risky">
+          ⚠️ Riskiest: {forecast.riskiestTimeWindow}
         </span>
       </div>
     </div>

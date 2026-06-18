@@ -5,22 +5,19 @@ import MapView from './components/MapView.jsx';
 import RoutePanel from './components/RoutePanel.jsx';
 import TimeSlider from './components/TimeSlider.jsx';
 import RiskVerdict from './components/RiskVerdict.jsx';
-import GeminiPanel from './components/GeminiPanel.jsx';
+import SaheliPanel from './components/SaheliPanel.jsx';
 import SOSButton from './components/SOSButton.jsx';
 import Dashboard from './components/Dashboard.jsx';
 import NavigationPanel from './components/NavigationPanel.jsx';
 import { ErrorBoundary } from './components/ErrorBoundary.jsx';
-import VoiceSOS from './components/VoiceSOS.jsx';
-import SafeCompanion from './components/SafeCompanion.jsx';
-import TrackJourney from './components/TrackJourney.jsx';
 
-// New AI Guardian components
+// AI Intelligence Layer components
 import SafetyRecommendations from './components/SafetyRecommendations.jsx';
-import PreferencesModal from './components/PreferencesModal.jsx';
-import PersonalizedAlert from './components/PersonalizedAlert.jsx';
+import PersonalAlert from './components/PersonalAlert.jsx';
 import RiskForecastChart from './components/RiskForecastChart.jsx';
 import BestTimeWidget from './components/BestTimeWidget.jsx';
-import TrendBanner from './components/TrendBanner.jsx';
+import TrendInsightBanner from './components/TrendInsightBanner.jsx';
+import PreferencesModal from './components/PreferencesModal.jsx';
 
 import { useIncidents } from './hooks/useIncidents.js';
 import { useRoute } from './hooks/useRoute.js';
@@ -29,9 +26,8 @@ import { useAIGuardian } from './hooks/useAIGuardian.js';
 import { useUserLocation } from './hooks/useUserLocation.js';
 import { seedIncidentsIfNeeded } from './lib/seedData.js';
 import { FIREBASE_CONFIGURED } from './lib/firebase.js';
-import { getGeminiWeights } from './lib/gemini.js';
-import { haversine } from './lib/haversine.js';
-import { extractPatterns, getSliderGradient } from './lib/PredictiveEngine.js';
+import { getUserProfile } from './lib/userProfile.js';
+import { extractPatterns } from './lib/PredictiveEngine.js';
 
 const GOOGLE_MAPS_LIBRARIES = ['visualization', 'places'];
 const GOOGLE_MAPS_VERSION = '3.64'; // Pin to last version supporting HeatmapLayer (deprecated in 3.65)
@@ -106,193 +102,100 @@ function AppInner() {
   const [mapPanTarget, setMapPanTarget] = useState(null);
   const [routesAnalyzed, setRoutesAnalyzed] = useState(0);
   const [prefsOpen, setPrefsOpen] = useState(false);
+  const [userProfile, setUserProfile] = useState(getUserProfile());
 
-  // Voice Activation & Dynamic Weights States
-  const [voiceActive, setVoiceActive] = useState(true);
-  const [isSpeechSupported, setIsSpeechSupported] = useState(false);
-  const [geminiWeights, setGeminiWeights] = useState(null);
-  const [showBanner, setShowBanner] = useState(() => {
-    return !sessionStorage.getItem('saferoute_api_banner_dismissed');
-  });
-
-  useEffect(() => {
-    setIsSpeechSupported(!!(window.SpeechRecognition || window.webkitSpeechRecognition));
-  }, []);
-
-  const handleDismissBanner = () => {
-    sessionStorage.setItem('saferoute_api_banner_dismissed', 'true');
-    setShowBanner(false);
-  };
-
-  // User location hook for Feature 1
+  // User location hook
   const {
     position: userLocation,
-    accuracy: userAccuracy,
-    heading: userHeading,
     loading: userLocationLoading,
     isTracking: userIsTracking,
     startTracking: userStartTracking,
-    stopTracking: userStopTracking,
     centerOnUser: userCenterOnUser,
   } = useUserLocation();
 
-  const { incidents: firestoreIncidents, deletedIds, deleteIncident } = useIncidents();
-  // Merge Firestore incidents with locally-added ones, then filter out deleted ones
-  const incidents = useMemo(
-    () => [...firestoreIncidents, ...localIncidents].filter(
-      (inc) => !deletedIds.has(inc.id)
-    ),
-    [firestoreIncidents, localIncidents, deletedIds]
-  );
+  const { incidents: firestoreIncidents } = useIncidents();
+  // Merge Firestore incidents with locally-added ones
+  const incidents = [...firestoreIncidents, ...localIncidents];
 
   const {
     directionsResult,
     waypoints,
     scoringWaypoints,
-    allRouteOptions,
     loading: routeLoading,
     error: routeError,
     fetchRoute,
     clearRoute,
-  } = useRoute(incidents, sliderHour, geminiWeights);
+  } = useRoute(incidents, sliderHour);
 
   const { riskScore, riskLabel, segmentColors, nearbyIncidents } =
-    useRiskScore(waypoints, scoringWaypoints, incidents, sliderHour, geminiWeights);
+    useRiskScore(waypoints, scoringWaypoints, incidents, sliderHour);
 
-  // ── AI Guardian Hook ────────────────────────────────────────────────────────
+  // AI Guardian hook
   const {
-    contextAnalysis,
-    riskReasoning,
-    recommendations,
-    trendAnalysis,
-    forecast,
-    narrative,
-    contextLoading,
-    reasoningLoading,
-    recommendationsLoading,
-    trendLoading,
-    forecastLoading,
-    narrativeLoading,
+    contextAnalysis, contextLoading,
+    riskReasoning, riskLoading,
+    recommendations, recsLoading,
+    forecast, forecastLoading,
+    narrative, narrativeLoading,
+    trendAnalysis, trendLoading,
+    runTrendAnalysis,
     runFullPipeline,
     runSliderUpdate,
-    runTrendAnalysis,
-    clearAll: clearAIGuardian,
+    clearAll: clearAI,
   } = useAIGuardian();
-
-  // ── Compute final score with AI adjustment ──────────────────────────────────
-  const finalScore = useMemo(() => {
-    if (riskScore === null) return null;
-    if (!riskReasoning) return riskScore;
-    const adjusted = riskScore + (riskReasoning.baseScoreAdjustment || 0);
-    return Math.max(0, Math.min(100, Math.round(adjusted)));
-  }, [riskScore, riskReasoning]);
-
-  // ── Slider gradient from PredictiveEngine ───────────────────────────────────
-  const sliderGradient = useMemo(() => {
-    if (!nearbyIncidents || nearbyIncidents.length === 0) return null;
-    const patterns = extractPatterns(nearbyIncidents);
-    return getSliderGradient(patterns.hourlyRiskMap);
-  }, [nearbyIncidents]);
-
-  // Get all incidents near any of the route options to fetch their dynamic weights stably
-  const routeIncidents = useMemo(() => {
-    if (!allRouteOptions || allRouteOptions.length === 0) return [];
-    const seen = new Set();
-    const result = [];
-    for (const option of allRouteOptions) {
-      if (!option.scoringWaypoints) continue;
-      for (const wp of option.scoringWaypoints) {
-        for (const inc of incidents) {
-          const key = inc.id ?? `${inc.lat},${inc.lng}`;
-          if (!seen.has(key) && haversine(wp, inc) <= 150) {
-            seen.add(key);
-            result.push(inc);
-          }
-        }
-      }
-    }
-    return result;
-  }, [allRouteOptions, incidents]);
-
-  // Fetch weights when routeIncidents or sliderHour changes (with 300ms debounce)
-  useEffect(() => {
-    if (routeIncidents.length === 0) {
-      setGeminiWeights(null);
-      return;
-    }
-    let active = true;
-    const fetchWeights = async () => {
-      const weights = await getGeminiWeights(routeIncidents, sliderHour);
-      if (active) {
-        setGeminiWeights(weights);
-      }
-    };
-    const timer = setTimeout(() => {
-      fetchWeights();
-    }, 300);
-    return () => {
-      active = false;
-      clearTimeout(timer);
-    };
-  }, [routeIncidents, sliderHour]);
-
-  // ── Trend Analysis on App Load (once) ───────────────────────────────────────
-  const trendAnalyzedRef = useRef(false);
-  useEffect(() => {
-    if (!trendAnalyzedRef.current && incidents.length > 0) {
-      trendAnalyzedRef.current = true;
-      runTrendAnalysis(incidents);
-    }
-  }, [incidents, runTrendAnalysis]);
 
   // Seed demo data on first load
   useEffect(() => {
     seedIncidentsIfNeeded();
   }, []);
 
-  // ── AI Pipeline on Route Submit ─────────────────────────────────────────────
-  const initialPipelineDoneRef = useRef(false);
-  const prevRouteKeyRef = useRef('');
-
-  // Fire AI pipeline when route + score are first available
+  // Run trend analysis on app load (Feature 6)
   useEffect(() => {
-    if (!origin || !destination || waypoints.length === 0 || riskScore === null) return;
-
-    const routeKey = `${origin}|${destination}|${waypoints.length}`;
-    if (routeKey !== prevRouteKeyRef.current) {
-      prevRouteKeyRef.current = routeKey;
-      initialPipelineDoneRef.current = true;
-
-      // Calculate route distance from Directions API
-      let routeDistanceKm = 0;
-      if (directionsResult?.routes?.[0]?.legs) {
-        for (const leg of directionsResult.routes[0].legs) {
-          routeDistanceKm += (leg.distance?.value || 0) / 1000;
-        }
-      }
-
-      runFullPipeline({
-        sliderHour,
-        incidents,
-        nearbyIncidents,
-        routeDistanceKm,
-        origin,
-        destination,
-      });
+    if (incidents.length > 0) {
+      runTrendAnalysis(incidents);
     }
-  }, [origin, destination, waypoints.length, riskScore, sliderHour, nearbyIncidents,
-      directionsResult, incidents, runFullPipeline]);
+  }, [incidents.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Slider Change: re-run Steps 1-2 only (800ms debounce) ──────────────────
+  // Compute route distance from Directions API
+  const routeDistanceKm = useMemo(() => {
+    const leg = directionsResult?.routes?.[0]?.legs?.[0];
+    if (!leg?.distance?.value) return 0;
+    return Math.round((leg.distance.value / 1000) * 10) / 10;
+  }, [directionsResult]);
+
+  // Extract patterns for TimeSlider gradient
+  const incidentPatterns = useMemo(() => {
+    return extractPatterns(incidents);
+  }, [incidents]);
+
+  // Compute AI-adjusted score: clamp(baseScore + baseScoreAdjustment, 0, 100)
+  const aiAdjustedScore = useMemo(() => {
+    if (riskScore === null || !riskReasoning) return null;
+    const adj = riskReasoning.baseScoreAdjustment || 0;
+    return Math.min(100, Math.max(0, riskScore + adj));
+  }, [riskScore, riskReasoning]);
+
+  // Final displayed score
+  const finalScore = aiAdjustedScore !== null ? aiAdjustedScore : riskScore;
+
+  // Fire AI pipeline after route+score are ready
   useEffect(() => {
-    if (!initialPipelineDoneRef.current || !origin || !destination || waypoints.length === 0) return;
+    if (waypoints.length === 0 || riskScore === null) return;
+    if (!origin || !destination) return;
 
-    let routeDistanceKm = 0;
-    if (directionsResult?.routes?.[0]?.legs) {
-      for (const leg of directionsResult.routes[0].legs) {
-        routeDistanceKm += (leg.distance?.value || 0) / 1000;
-      }
-    }
+    runFullPipeline({
+      sliderHour,
+      incidents,
+      nearbyIncidents,
+      routeDistanceKm,
+      origin,
+      destination,
+    });
+  }, [waypoints, riskScore]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // On slider change: debounced re-run of Steps 1-2 only
+  useEffect(() => {
+    if (waypoints.length === 0 || !origin || !destination) return;
 
     const timer = setTimeout(() => {
       runSliderUpdate({
@@ -304,6 +207,7 @@ function AppInner() {
         destination,
       });
     }, 800);
+
     return () => clearTimeout(timer);
   }, [sliderHour]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -323,20 +227,16 @@ function AppInner() {
     async (orig, dest) => {
       setOrigin(orig);
       setDestination(dest);
-      // Clear previous route before fetching new one
       clearRoute();
-      clearAIGuardian();
-      initialPipelineDoneRef.current = false;
-      prevRouteKeyRef.current = '';
-      // Pan to starting point
+      clearAI();
       geocodeAndPan(orig);
       await fetchRoute(orig, dest);
       setRoutesAnalyzed((prev) => prev + 1);
       if (window.innerWidth < 768) {
-        setMobileSheetOpen(false); // Collapse sheet on mobile after route is found to show map
+        setMobileSheetOpen(false);
       }
     },
-    [fetchRoute, clearRoute, clearAIGuardian, geocodeAndPan]
+    [fetchRoute, clearRoute, clearAI, geocodeAndPan]
   );
 
   const handleMapClick = useCallback(() => {
@@ -349,14 +249,6 @@ function AppInner() {
     setLocalIncidents((prev) => [...prev, inc]);
   }, []);
 
-  const handleDeleteIncident = useCallback(async (incidentId) => {
-    // Remove from local list if it's a locally-added incident
-    setLocalIncidents((prev) => prev.filter((inc) => inc.id !== incidentId));
-    // Delegate to hook for Firestore/seed removal
-    await deleteIncident(incidentId);
-  }, [deleteIncident]);
-
-  // Feature 1: Start tracking callback for RoutePanel
   const handleStartTracking = useCallback((onGot) => {
     if (userLocation) {
       if (onGot) onGot(userLocation);
@@ -370,69 +262,15 @@ function AppInner() {
     if (!userIsTracking) userStartTracking();
   }, [userLocation, userCenterOnUser, userStartTracking, userIsTracking]);
 
-  // ── "Find Safer Route" handler (Feature 4 — handled in useRoute) ─────────
-  const handleFindSaferRoute = useCallback(async () => {
-    if (!origin || !destination) return;
-    clearAIGuardian();
-    initialPipelineDoneRef.current = false;
-    prevRouteKeyRef.current = '';
-    await fetchRoute(origin, destination);
-  }, [origin, destination, fetchRoute, clearAIGuardian]);
-
-  const headerTop = showBanner ? '56px' : '16px';
-  const sidebarTop = showBanner 
-    ? 'calc(56px + var(--header-h) + 12px)' 
-    : 'calc(16px + var(--header-h) + 12px)';
-
-  // Use finalScore for display (with AI adjustment)
-  const displayScore = finalScore !== null ? finalScore : riskScore;
+  const handlePrefsClose = useCallback(() => {
+    setPrefsOpen(false);
+    setUserProfile(getUserProfile()); // Re-read after save
+  }, []);
 
   return (
     <div className="app">
-      {/* API Key Disclosure Banner */}
-      {showBanner && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          height: '40px',
-          background: 'rgba(59, 130, 246, 0.95)',
-          color: '#fff',
-          padding: '0 20px',
-          textAlign: 'center',
-          fontSize: '12px',
-          fontWeight: '600',
-          zIndex: 9999,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '12px',
-          backdropFilter: 'blur(8px)',
-          boxShadow: '0 2px 10px rgba(0, 0, 0, 0.3)',
-        }}>
-          <span>ℹ️ Demo build: API keys are domain-restricted browser keys. Production deployment would proxy Gemini calls through Firebase Cloud Functions.</span>
-          <button
-            onClick={handleDismissBanner}
-            style={{
-              background: 'rgba(255, 255, 255, 0.2)',
-              border: 'none',
-              borderRadius: '4px',
-              color: '#fff',
-              padding: '4px 8px',
-              cursor: 'pointer',
-              fontSize: '10px',
-              fontWeight: '700',
-              textTransform: 'uppercase',
-            }}
-          >
-            Got it
-          </button>
-        </div>
-      )}
-
       {/* Header */}
-      <header className="app-header" style={{ top: headerTop }}>
+      <header className="app-header">
         <div className="app-header__brand">
           <span className="app-header__logo">🛡️</span>
           <div>
@@ -488,26 +326,15 @@ function AppInner() {
             <span className="incident-dot" />
             <span>{incidents.length} incidents tracked</span>
           </div>
-          <SafeCompanion
-            className="header-companion"
-            userLocation={userLocation}
-            startTracking={handleStartTracking}
-          />
-          <SOSButton className="header-sos" userLocation={userLocation} />
+          <SOSButton className="header-sos" />
         </div>
       </header>
 
-      {/* Floating Actions for mobile */}
-      <SafeCompanion
-        userLocation={userLocation}
-        startTracking={handleStartTracking}
-        isMobileFloating={true}
-        mobileSheetOpen={mobileSheetOpen}
-      />
-      <SOSButton className={`floating-sos ${mobileSheetOpen ? 'sheet-open' : 'sheet-closed'}`} userLocation={userLocation} />
+      {/* Floating SOS for mobile */}
+      <SOSButton className={`floating-sos ${mobileSheetOpen ? 'sheet-open' : 'sheet-closed'}`} />
 
-      {/* Preferences Modal */}
-      <PreferencesModal isOpen={prefsOpen} onClose={() => setPrefsOpen(false)} />
+      {/* Trend Insight Banner (Feature 6) */}
+      <TrendInsightBanner trendAnalysis={trendAnalysis} loading={trendLoading} />
 
       {/* Main layout */}
       <main className="app-main">
@@ -518,28 +345,15 @@ function AppInner() {
             sliderHour={sliderHour}
             segmentColors={segmentColors}
             onLocalIncidentAdd={handleLocalIncidentAdd}
-            onDeleteIncident={handleDeleteIncident}
             mobileSheetOpen={mobileSheetOpen}
             onMapClick={handleMapClick}
             panTo={mapPanTarget}
             waypoints={waypoints}
-            userPos={userLocation}
-            accuracy={userAccuracy}
-            heading={userHeading}
-            locLoading={userLocationLoading}
-            isTracking={userIsTracking}
-            startTracking={userStartTracking}
-            stopTracking={userStopTracking}
-            centerOnUser={userCenterOnUser}
           />
-          <VoiceSOS voiceActive={voiceActive} />
-
-          {/* Trend Insight Banner at bottom of map */}
-          <TrendBanner trendAnalysis={trendAnalysis} loading={trendLoading} />
         </div>
 
         {/* Sidebar / Bottom Sheet */}
-        <aside className={`app-sidebar ${mobileSheetOpen ? 'open' : 'closed'}`} style={{ top: sidebarTop }}>
+        <aside className={`app-sidebar ${mobileSheetOpen ? 'open' : 'closed'}`}>
           {/* Mobile drag handle */}
           <button
             className="sidebar-handle"
@@ -552,10 +366,10 @@ function AppInner() {
           {/* Mobile collapsed summary */}
           {!mobileSheetOpen && (
             <div className="sidebar-collapsed-summary" onClick={() => setMobileSheetOpen(true)}>
-              {displayScore !== null && waypoints.length > 0 ? (
+              {riskScore !== null && waypoints.length > 0 ? (
                 <div className="collapsed-score-row">
                   <span className="collapsed-score-badge" style={{ color: `var(--risk-${riskLabel})` }}>
-                    🛡️ {displayScore}/100 - {riskLabel.toUpperCase()}
+                    🛡️ {finalScore ?? riskScore}/100 - {riskLabel.toUpperCase()}
                   </span>
                   <span className="collapsed-score-hint">Tap to expand safety details</span>
                 </div>
@@ -580,20 +394,23 @@ function AppInner() {
                   </div>
                 )}
 
-                {/* Preferences Button */}
-                <div style={{
-                  display: 'flex',
-                  justifyContent: 'flex-end',
-                  marginBottom: '8px',
-                }}>
+                {/* Preferences button */}
+                <div className="sidebar-prefs-row">
                   <button
-                    className="prefs-btn"
+                    className="sidebar-prefs-btn"
                     onClick={() => setPrefsOpen(true)}
-                    title="Safety Preferences"
+                    title="Open safety preferences"
                   >
                     ⚙ Preferences
                   </button>
                 </div>
+
+                {/* Personal Alert (Feature 4) */}
+                <PersonalAlert
+                  finalScore={finalScore}
+                  dominantRiskType={riskReasoning?.dominantRiskType}
+                  userProfile={userProfile}
+                />
 
                 <RoutePanel
                   onFindRoute={handleFindRoute}
@@ -607,145 +424,38 @@ function AppInner() {
                   <div className="route-error">⚠️ {routeError}. Try a different route.</div>
                 )}
 
-                {/* Sidebar Safety Actions Panel */}
-                <div style={{
-                  margin: '12px 0 4px 0',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '10px',
-                  background: 'rgba(255, 255, 255, 0.02)',
-                  border: '1px solid var(--border)',
-                  padding: '16px 14px 12px 14px',
-                  borderRadius: 'var(--r-md)',
-                }}>
-                  <p style={{
-                    fontSize: '11px',
-                    fontWeight: '700',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.8px',
-                    color: 'var(--text-secondary)',
-                    margin: '0 0 6px 0'
-                  }}>🛡️ QUICK SAFETY ACTIONS</p>
-                  
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%' }}>
-                    <SOSButton className="sidebar-sos" userLocation={userLocation} />
-                    <SafeCompanion
-                      className="sidebar-companion"
-                      userLocation={userLocation}
-                      startTracking={handleStartTracking}
-                    />
-                  </div>
-                </div>
-
-                {/* Voice SOS Toggle */}
-                {isSpeechSupported && (
-                  <div className="voice-sos-toggle-container" style={{
-                    margin: '12px 0 4px 0',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '10px',
-                    background: 'rgba(255, 255, 255, 0.03)',
-                    border: '1px solid var(--border)',
-                    padding: '10px 14px',
-                    borderRadius: 'var(--r-md)',
-                  }}>
-                    <input
-                      type="checkbox"
-                      id="voice-sos-checkbox"
-                      checked={voiceActive}
-                      onChange={(e) => setVoiceActive(e.target.checked)}
-                      style={{
-                        width: '16px',
-                        height: '16px',
-                        accentColor: '#a855f7',
-                        cursor: 'pointer',
-                      }}
-                    />
-                    <label htmlFor="voice-sos-checkbox" style={{
-                      fontSize: '12px',
-                      color: 'var(--text-secondary)',
-                      cursor: 'pointer',
-                      fontWeight: '500',
-                    }}>
-                      Voice SOS active — say 'help me' anytime
-                    </label>
-                  </div>
-                )}
-
                 <div className="sidebar-divider" />
                 <TimeSlider
                   hour={sliderHour}
                   onChange={setSliderHour}
-                  sliderGradient={sliderGradient}
-                  forecast={forecast}
-                  riskScore={displayScore}
+                  hourlyRiskMap={incidentPatterns.hourlyRiskMap}
+                  predictions={forecast?.predictions}
                 />
 
-                {displayScore !== null && waypoints.length > 0 && (
+                {riskScore !== null && waypoints.length > 0 && (
                   <>
-                    {/* Personalized Alert */}
-                    <PersonalizedAlert
-                      finalScore={displayScore}
-                      dominantRiskType={riskReasoning?.dominantRiskType}
-                    />
-
                     <div className="sidebar-divider" />
                     <RiskVerdict
-                      score={displayScore}
+                      score={riskScore}
                       label={riskLabel}
                       nearbyIncidents={nearbyIncidents}
                       sliderHour={sliderHour}
                       contextAnalysis={contextAnalysis}
                       contextLoading={contextLoading}
                       riskReasoning={riskReasoning}
-                      reasoningLoading={reasoningLoading}
+                      riskLoading={riskLoading}
+                      aiAdjustedScore={aiAdjustedScore}
                     />
-                    {/* Feature 4: Find Safer Route button when risk is high */}
-                    {displayScore > 66 && (
-                      <button
-                        className="find-safer-route-btn"
-                        onClick={handleFindSaferRoute}
-                        disabled={routeLoading}
-                      >
-                        {routeLoading ? (
-                          <><span className="btn-spinner" /> Finding safer route…</>
-                        ) : (
-                          <>🔄 Find Safer Route</>
-                        )}
-                      </button>
-                    )}
                   </>
                 )}
 
-                {/* Safety Recommendations */}
-                {(recommendationsLoading || recommendations) && waypoints.length > 0 && (
+                {/* Safety Recommendations (Feature 3) */}
+                {(recommendations || recsLoading) && waypoints.length > 0 && (
                   <>
                     <div className="sidebar-divider" />
                     <SafetyRecommendations
                       recommendations={recommendations}
-                      loading={recommendationsLoading}
-                    />
-                  </>
-                )}
-
-                {/* Risk Forecast Chart */}
-                {(forecastLoading || forecast) && waypoints.length > 0 && (
-                  <>
-                    <div className="sidebar-divider" />
-                    <RiskForecastChart
-                      forecast={forecast}
-                      loading={forecastLoading}
-                    />
-                  </>
-                )}
-
-                {/* Best Time to Travel Widget */}
-                {(forecastLoading || forecast) && waypoints.length > 0 && (
-                  <>
-                    <div className="sidebar-divider" />
-                    <BestTimeWidget
-                      forecast={forecast}
-                      loading={forecastLoading}
+                      loading={recsLoading}
                     />
                   </>
                 )}
@@ -764,13 +474,25 @@ function AppInner() {
                   </>
                 )}
 
+                {/* Risk Forecast Chart (Feature 5) */}
+                {(forecast || forecastLoading) && waypoints.length > 0 && (
+                  <>
+                    <div className="sidebar-divider" />
+                    <RiskForecastChart forecast={forecast} loading={forecastLoading} />
+                  </>
+                )}
+
+                {/* Best Time to Travel (Feature 8) */}
+                {(forecast || forecastLoading) && waypoints.length > 0 && (
+                  <>
+                    <div className="sidebar-divider" />
+                    <BestTimeWidget forecast={forecast} loading={forecastLoading} />
+                  </>
+                )}
+
+                {/* Saheli AI Panel (Feature 9) — replaces old GeminiPanel */}
                 <div className="sidebar-divider" />
-                <GeminiPanel
-                  narrative={narrative}
-                  loading={narrativeLoading}
-                  error={null}
-                  riskScore={displayScore}
-                />
+                <SaheliPanel narrative={narrative} loading={narrativeLoading} />
               </>
             ) : activeTab === 'incidents' ? (
               /* ── Incidents tab ─────────────────────────────────────────── */
@@ -787,7 +509,6 @@ function AppInner() {
                   incidents.map((inc, i) => {
                     const icons = { harassment_history: '⚡', poor_lighting: '💡', isolated: '🚶' };
                     const labels = { harassment_history: 'Harassment', poor_lighting: 'Poor Lighting', isolated: 'Isolated Area' };
-                    const ageText = getIncidentAgeText(inc);
                     return (
                       <div className="incident-card" key={inc.id ?? i}>
                         <span className="incident-card__icon">{icons[inc.type] ?? '⚠️'}</span>
@@ -797,23 +518,10 @@ function AppInner() {
                           {inc.description && (
                             <p className="incident-card__desc">{inc.description}</p>
                           )}
-                          {ageText && (
-                            <p className="incident-card__age">{ageText}</p>
-                          )}
                         </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px', flexShrink: 0 }}>
-                          <span className="incident-card__coords">
-                            {inc.lat?.toFixed(4)}, {inc.lng?.toFixed(4)}
-                          </span>
-                          <button
-                            className="incident-card__delete-btn"
-                            onClick={() => handleDeleteIncident(inc.id)}
-                            title="Delete this incident"
-                            aria-label="Delete incident"
-                          >
-                            🗑️ Delete
-                          </button>
-                        </div>
+                        <span className="incident-card__coords">
+                          {inc.lat?.toFixed(4)}, {inc.lng?.toFixed(4)}
+                        </span>
                       </div>
                     );
                   })
@@ -826,31 +534,11 @@ function AppInner() {
           </div>
         </aside>
       </main>
+
+      {/* Preferences Modal (Feature 4) */}
+      <PreferencesModal isOpen={prefsOpen} onClose={handlePrefsClose} />
     </div>
   );
-}
-
-/** Helper: returns "Reported X hours/days ago" text for an incident */
-function getIncidentAgeText(inc) {
-  if (!inc.timestamp) return null;
-  // Firestore Timestamp has .toDate(), raw Date is already a Date
-  let date;
-  if (inc.timestamp?.toDate) {
-    date = inc.timestamp.toDate();
-  } else if (inc.timestamp instanceof Date) {
-    date = inc.timestamp;
-  } else if (typeof inc.timestamp?.seconds === 'number') {
-    date = new Date(inc.timestamp.seconds * 1000);
-  } else {
-    return null;
-  }
-  const diffMs = Date.now() - date.getTime();
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-  if (diffHours < 1) return 'reported just now';
-  if (diffHours < 24) return `reported ${diffHours}h ago`;
-  const diffDays = Math.floor(diffHours / 24);
-  if (diffDays === 1) return 'reported 1 day ago';
-  return `reported ${diffDays} days ago`;
 }
 
 // ── Root with Maps loader ─────────────────────────────────────────────────────
@@ -893,16 +581,6 @@ function AppWithMaps() {
           <p>Loading map…</p>
         </div>
       </div>
-    );
-  }
-
-  const path = window.location.pathname;
-  if (path.startsWith('/track/')) {
-    const trackId = path.split('/track/')[1];
-    return (
-      <ErrorBoundary>
-        <TrackJourney trackId={trackId} />
-      </ErrorBoundary>
     );
   }
 

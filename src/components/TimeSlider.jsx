@@ -1,8 +1,9 @@
 import React, { useMemo } from 'react';
+import { buildSliderGradient, getScoreLevel } from '../lib/PredictiveEngine.js';
 
 function isNight(h) { return h >= 21 || h < 6; }
 
-export default function TimeSlider({ hour, onChange, sliderGradient, forecast, riskScore }) {
+export default function TimeSlider({ hour, onChange, hourlyRiskMap, predictions }) {
   const night = isNight(hour);
   const cls   = night ? 'night' : 'day';
 
@@ -11,19 +12,22 @@ export default function TimeSlider({ hour, onChange, sliderGradient, forecast, r
   const h12   = hour % 12 || 12;
   const label = `${h12}:00 ${ampm}`;
 
-  // Risk level text for tooltip
-  const riskLevel = riskScore === null ? null
-    : riskScore <= 33 ? 'low'
-    : riskScore <= 66 ? 'moderate'
-    : 'high';
+  // Build slider gradient from hourlyRiskMap
+  const sliderGradient = useMemo(() => {
+    if (!hourlyRiskMap || Object.keys(hourlyRiskMap).length === 0) return null;
+    return buildSliderGradient(hourlyRiskMap);
+  }, [hourlyRiskMap]);
 
-  // Get AI prediction for nearest hour from forecast
-  const aiPrediction = useMemo(() => {
-    if (!forecast || !forecast.predictions || forecast.predictions.length === 0) return null;
-    // Find the prediction closest to the current slider hour
-    let closest = forecast.predictions[0];
-    let minDiff = Math.abs(closest.hour - hour);
-    for (const p of forecast.predictions) {
+  // Get risk score at current hour from hourlyRiskMap
+  const currentHourScore = hourlyRiskMap ? (hourlyRiskMap[hour] ?? 0) : null;
+  const currentHourLevel = currentHourScore !== null ? getScoreLevel(currentHourScore) : null;
+
+  // Get nearest prediction for AI prediction label
+  const nearestPrediction = useMemo(() => {
+    if (!predictions || predictions.length === 0) return null;
+    let closest = predictions[0];
+    let minDiff = Math.abs(predictions[0].hour - hour);
+    for (const p of predictions) {
       const diff = Math.abs(p.hour - hour);
       if (diff < minDiff) {
         minDiff = diff;
@@ -31,47 +35,24 @@ export default function TimeSlider({ hour, onChange, sliderGradient, forecast, r
       }
     }
     return closest;
-  }, [forecast, hour]);
-
-  // Determine track background
-  const trackStyle = sliderGradient
-    ? { background: sliderGradient }
-    : {};
+  }, [predictions, hour]);
 
   return (
-    <div className="time-slider" style={{ display: 'flex', flexDirection: 'column' }}>
-      {/* Brand purple differentiator badge */}
-      <div style={{
-        display: 'inline-block',
-        backgroundColor: 'rgba(124, 58, 237, 0.15)',
-        border: '1px solid rgba(168, 85, 247, 0.35)',
-        color: '#c084fc',
-        fontSize: '11px',
-        fontWeight: '600',
-        padding: '3px 8px',
-        borderRadius: '6px',
-        marginBottom: '10px',
-        alignSelf: 'flex-start',
-        letterSpacing: '0.2px',
-        boxShadow: '0 2px 8px rgba(124, 58, 237, 0.1)',
-      }}>
-        ✨ Time-aware AI scoring · Only SafeRoute adjusts risk by time of day
-      </div>
-
+    <div className="time-slider">
       <div className="time-slider__header">
         <span className="time-slider__icon">{night ? '🌙' : '☀️'}</span>
         <span className="time-slider__label">TIME OF DAY</span>
         <span className={`time-slider__pill ${cls}`}>{label}</span>
       </div>
 
-      {/* Slider with risk tooltip */}
-      <div className="time-slider__track-wrap">
-        {riskScore !== null && riskLevel && (
+      {/* Slider with tooltip */}
+      <div className="time-slider__slider-wrap">
+        {currentHourScore !== null && (
           <div
             className="time-slider__tooltip"
             style={{ left: `${(hour / 23) * 100}%` }}
           >
-            Risk at {label}: {riskScore}/100 · {riskLevel}
+            Risk at {label}: {currentHourScore}/100 · {currentHourLevel}
           </div>
         )}
         <input
@@ -80,9 +61,9 @@ export default function TimeSlider({ hour, onChange, sliderGradient, forecast, r
           min={0} max={23} step={1}
           value={hour}
           onChange={(e) => onChange(Number(e.target.value))}
-          className={`time-slider__input ${sliderGradient ? 'gradient' : cls}`}
-          style={sliderGradient ? trackStyle : {}}
+          className={`time-slider__input ${cls}`}
           aria-label={`Time of day: ${label}`}
+          style={sliderGradient ? { background: sliderGradient } : undefined}
         />
       </div>
 
@@ -91,9 +72,12 @@ export default function TimeSlider({ hour, onChange, sliderGradient, forecast, r
       </div>
 
       {/* AI Prediction label */}
-      {aiPrediction && (
-        <div className="time-slider__prediction">
-          🧠 AI predicts <strong>{aiPrediction.predictedScore}/100</strong> risk at this hour based on incident history
+      {nearestPrediction && (
+        <div className="time-slider__ai-prediction">
+          <span className="time-slider__ai-icon">🤖</span>
+          <span>
+            AI predicts {nearestPrediction.predictedScore}/100 risk at this hour based on incident history
+          </span>
         </div>
       )}
     </div>

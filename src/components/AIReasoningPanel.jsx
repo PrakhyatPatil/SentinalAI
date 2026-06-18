@@ -10,8 +10,8 @@ export default function AIReasoningPanel({ riskReasoning, loading }) {
     return (
       <div className="ai-reasoning ai-reasoning--loading">
         <div className="ai-reasoning__badge">
-          <span className="ai-reasoning__badge-pulse" />
-          AI Analyzing…
+          <span className="ai-reasoning__spinner" />
+          <span>AI analyzing…</span>
         </div>
       </div>
     );
@@ -21,50 +21,40 @@ export default function AIReasoningPanel({ riskReasoning, loading }) {
 
   const { reasoning, confidenceLevel, dominantRiskType } = riskReasoning;
 
-  const confidenceColors = {
-    low: 'var(--text-muted)',
-    medium: 'var(--risk-moderate)',
-    high: 'var(--risk-safe)',
-  };
-
   return (
     <div className="ai-reasoning">
       <div className="ai-reasoning__header">
         <span className="ai-reasoning__badge">
-          <span className="ai-reasoning__badge-icon">🧠</span>
+          <span className="ai-reasoning__badge-dot" />
           AI Reasoned
         </span>
-        <span
-          className="ai-reasoning__confidence"
-          style={{ color: confidenceColors[confidenceLevel] || confidenceColors.low }}
-        >
+        <span className={`ai-reasoning__confidence ai-reasoning__confidence--${confidenceLevel}`}>
           {confidenceLevel} confidence
         </span>
       </div>
 
-      {dominantRiskType && dominantRiskType !== 'unknown' && (
-        <div className="ai-reasoning__dominant">
-          Primary risk factor: <strong>{dominantRiskType.replace(/_/g, ' ')}</strong>
-        </div>
-      )}
-
       <button
         className="ai-reasoning__toggle"
-        onClick={() => setExpanded((v) => !v)}
+        onClick={() => setExpanded(!expanded)}
         aria-expanded={expanded}
       >
         How we calculated this {expanded ? '▴' : '▾'}
       </button>
 
-      {expanded && (
-        <ul className="ai-reasoning__steps">
+      {expanded && reasoning && reasoning.length > 0 && (
+        <div className="ai-reasoning__steps">
           {reasoning.map((step, i) => (
-            <li key={i} className="ai-reasoning__step">
+            <div className="ai-reasoning__step" key={i}>
               <span className="ai-reasoning__step-num">{i + 1}</span>
-              {step}
-            </li>
+              <span className="ai-reasoning__step-text">{step}</span>
+            </div>
           ))}
-        </ul>
+          {dominantRiskType && dominantRiskType !== 'unknown' && (
+            <div className="ai-reasoning__dominant">
+              Primary concern: <strong>{dominantRiskType.replace(/_/g, ' ')}</strong>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

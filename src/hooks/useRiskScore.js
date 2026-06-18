@@ -12,11 +12,11 @@ const SEGMENT_SIZE = 20; // full path points per coloured polyline segment
  * @param {Array} incidents
  * @param {number} sliderHour
  */
-export function useRiskScore(waypoints, scoringWaypoints, incidents, sliderHour, geminiWeights = null) {
+export function useRiskScore(waypoints, scoringWaypoints, incidents, sliderHour) {
   // Overall score uses the lighter sampled array
   const riskScore = useMemo(
-    () => scoreRoute(scoringWaypoints, incidents, sliderHour, geminiWeights),
-    [scoringWaypoints, incidents, sliderHour, geminiWeights]
+    () => scoreRoute(scoringWaypoints, incidents, sliderHour),
+    [scoringWaypoints, incidents, sliderHour]
   );
 
   const riskLabel = useMemo(() => scoreToLabel(riskScore), [riskScore]);
@@ -33,7 +33,7 @@ export function useRiskScore(waypoints, scoringWaypoints, incidents, sliderHour,
       const chunk = waypoints.slice(i, i + SEGMENT_SIZE + 1);
       // Sample every 4th point for scoring within the chunk
       const chunkSample = chunk.filter((_, idx) => idx % 4 === 0);
-      const segScore = scoreRoute(chunkSample.length > 0 ? chunkSample : chunk, incidents, sliderHour, geminiWeights);
+      const segScore = scoreRoute(chunkSample.length > 0 ? chunkSample : chunk, incidents, sliderHour);
       segments.push({
         waypoints: chunk,
         score: segScore,
@@ -41,7 +41,7 @@ export function useRiskScore(waypoints, scoringWaypoints, incidents, sliderHour,
       });
     }
     return segments;
-  }, [waypoints, incidents, sliderHour, geminiWeights]);
+  }, [waypoints, incidents, sliderHour]);
 
   /**
    * Returns incidents within 150m of the route (for Gemini prompt).

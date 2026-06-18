@@ -1,7 +1,14 @@
 import React from 'react';
 
+const PRIORITY_COLORS = {
+  high: '#ef4444',
+  medium: '#f59e0b',
+  low: '#22c55e',
+};
+
 /**
- * SafetyRecommendations — 3 stacked recommendation cards with staggered animation.
+ * SafetyRecommendations — Stacked cards with emoji, title, detail, colored left border.
+ * 100ms stagger animation on load.
  */
 export default function SafetyRecommendations({ recommendations, loading }) {
   if (loading) {
@@ -9,21 +16,15 @@ export default function SafetyRecommendations({ recommendations, loading }) {
       <div className="safety-recs">
         <h3 className="safety-recs__title">🛡️ Safety Recommendations</h3>
         <div className="safety-recs__loading">
-          <div className="skeleton-line" style={{ width: '85%' }} />
-          <div className="skeleton-line" style={{ width: '70%' }} />
-          <div className="skeleton-line" style={{ width: '60%' }} />
+          <div className="safety-recs__skeleton" />
+          <div className="safety-recs__skeleton" />
+          <div className="safety-recs__skeleton" />
         </div>
       </div>
     );
   }
 
   if (!recommendations || recommendations.length === 0) return null;
-
-  const borderColors = {
-    high: 'var(--risk-high)',
-    medium: 'var(--risk-moderate)',
-    low: 'var(--risk-safe)',
-  };
 
   return (
     <div className="safety-recs">
@@ -32,18 +33,18 @@ export default function SafetyRecommendations({ recommendations, loading }) {
         {recommendations.map((rec, i) => (
           <div
             key={i}
-            className="safety-recs__card"
+            className="safety-rec-card"
             style={{
-              '--rec-border': borderColors[rec.priority] || borderColors.medium,
+              '--rec-color': PRIORITY_COLORS[rec.priority] || PRIORITY_COLORS.medium,
               animationDelay: `${i * 100}ms`,
             }}
           >
-            <span className="safety-recs__icon">{rec.icon}</span>
-            <div className="safety-recs__content">
-              <p className="safety-recs__card-title">{rec.title}</p>
-              <p className="safety-recs__detail">{rec.detail}</p>
+            <span className="safety-rec-card__icon">{rec.icon || '💡'}</span>
+            <div className="safety-rec-card__content">
+              <div className="safety-rec-card__title">{rec.title}</div>
+              <div className="safety-rec-card__detail">{rec.detail}</div>
             </div>
-            <span className="safety-recs__priority" data-priority={rec.priority}>
+            <span className={`safety-rec-card__priority safety-rec-card__priority--${rec.priority}`}>
               {rec.priority}
             </span>
           </div>

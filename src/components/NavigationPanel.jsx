@@ -127,8 +127,6 @@ export default function NavigationPanel({
             const risk = getStepRisk(step, incidents, sliderHour);
             const isLast = idx === steps.length - 1;
             const isExpanded = expandedStep === idx;
-            const stepLoc = step.start_location ? { lat: step.start_location.lat(), lng: step.start_location.lng() } : null;
-            const stepIncidents = stepLoc ? incidents.filter((inc) => haversine(stepLoc, inc) <= 200) : [];
 
             return (
               <React.Fragment key={idx}>
@@ -170,49 +168,6 @@ export default function NavigationPanel({
                         </span>
                       )}
                     </div>
-
-                    {isExpanded && stepIncidents.length > 0 && (
-                      <div className="nav-step__incidents-detail" style={{
-                        marginTop: '8px',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '6px',
-                        background: 'rgba(255, 255, 255, 0.02)',
-                        border: '1px solid rgba(255, 255, 255, 0.05)',
-                        borderRadius: '6px',
-                        padding: '8px 10px',
-                      }}>
-                        <p style={{
-                          fontSize: '10px',
-                          fontWeight: '700',
-                          color: 'var(--text-muted)',
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.5px',
-                          margin: '0 0 2px 0'
-                        }}>Incidents nearby:</p>
-                        {stepIncidents.map((inc, i) => {
-                          const icons = { harassment_history: '⚡', poor_lighting: '💡', isolated: '🚶' };
-                          const labels = { harassment_history: 'Harassment', poor_lighting: 'Poor Lighting', isolated: 'Isolated Area' };
-                          const formattedTime = inc.hour !== undefined ? `${inc.hour % 12 || 12} ${inc.hour >= 12 ? 'PM' : 'AM'}` : 'unknown time';
-                          return (
-                            <div key={inc.id ?? i} style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              fontSize: '11px',
-                              color: 'var(--text-secondary)'
-                            }}>
-                              <span style={{ fontWeight: '500' }}>
-                                {icons[inc.type] ?? '⚠️'} {labels[inc.type] ?? inc.type}
-                              </span>
-                              <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
-                                reported {formattedTime}
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
                   </div>
                 </div>
               </React.Fragment>

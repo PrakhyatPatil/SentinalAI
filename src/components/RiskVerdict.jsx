@@ -43,15 +43,25 @@ export default function RiskVerdict({
   label,
   nearbyIncidents = [],
   sliderHour,
+  // AI Guardian props
   contextAnalysis,
   contextLoading,
   riskReasoning,
-  reasoningLoading,
+  riskLoading,
+  aiAdjustedScore,
 }) {
   if (score === null || score === undefined) return null;
 
-  const cfg   = VERDICTS[label] ?? VERDICTS.safe;
-  const tips  = TIPS[label]     ?? TIPS.safe;
+  // Use AI-adjusted score if available, otherwise base score
+  const displayScore = aiAdjustedScore !== null && aiAdjustedScore !== undefined
+    ? aiAdjustedScore
+    : score;
+
+  // Determine label based on displayScore
+  const displayLabel = displayScore <= 33 ? 'safe' : displayScore <= 66 ? 'moderate' : 'high';
+
+  const cfg   = VERDICTS[displayLabel] ?? VERDICTS.safe;
+  const tips  = TIPS[displayLabel]     ?? TIPS.safe;
   const night = isNightHour(sliderHour);
 
   // Deduplicate incidents
@@ -86,31 +96,21 @@ export default function RiskVerdict({
           </div>
         )}
 
-        {/* Score + Context Chip */}
+        {/* Score + Context Chip row */}
         <div className="rv__score-row">
-          <span className="rv__score-num">{score}</span>
+          <span className="rv__score-num">{displayScore}</span>
           <span className="rv__score-sep">/100</span>
           <span className="rv__score-badge">{cfg.label}</span>
           <ContextChip contextAnalysis={contextAnalysis} loading={contextLoading} />
         </div>
+
         <div className="rv__bar">
-          <div className="rv__bar-fill" style={{ width: `${score}%` }}
-            role="meter" aria-valuenow={score} aria-valuemin={0} aria-valuemax={100} />
-        </div>
-        <div style={{
-          fontSize: '11px',
-          color: 'var(--text-secondary)',
-          marginTop: '8px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '4px',
-          lineHeight: '1.4',
-        }}>
-          <span style={{ color: 'var(--brand-light)' }}>✨</span> Weights dynamically adjusted by Gemini based on time and incident pattern
+          <div className="rv__bar-fill" style={{ width: `${displayScore}%` }}
+            role="meter" aria-valuenow={displayScore} aria-valuemin={0} aria-valuemax={100} />
         </div>
 
         {/* AI Reasoning Panel */}
-        <AIReasoningPanel riskReasoning={riskReasoning} loading={reasoningLoading} />
+        <AIReasoningPanel riskReasoning={riskReasoning} loading={riskLoading} />
 
         {/* Hazards */}
         <p className="rv__hazards-title">HAZARDS ON THIS ROUTE ({unique.length})</p>

@@ -1,152 +1,121 @@
 /**
- * useAIGuardian.js — React hook managing the full AI pipeline lifecycle.
- * Progressive loading: each section renders as its data arrives.
+ * useAIGuardian.js — Central hook orchestrating all AI Guardian calls.
+ * Manages individual loading states for progressive rendering.
  */
-import { useState, useCallback, useRef, useEffect } from 'react';
-import {
-  analyzeContext,
-  reasonRisk,
-  getRecommendations,
-  predictFutureRisk,
-  explainInNaturalLanguage,
-  analyzeTrends,
-} from '../lib/AIGuardian.js';
-import { extractPatterns } from '../lib/PredictiveEngine.js';
-
-// ── User Profile Helpers ───────────────────────────────────────────────────────
-
-const PROFILE_KEY = 'saferoute_profile';
-
-const DEFAULT_PROFILE = {
-  sensitivityLevel: 'medium',
-  alertThreshold: 60,
-  priorityIncidentType: null,
-  travelPattern: 'mixed',
-};
-
-export function getUserProfile() {
-  try {
-    const stored = localStorage.getItem(PROFILE_KEY);
-    if (stored) {
-      return { ...DEFAULT_PROFILE, ...JSON.parse(stored) };
-    }
-  } catch { /* ignore */ }
-  return { ...DEFAULT_PROFILE };
-}
-
-export function saveUserProfile(profile) {
-  try {
-    localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
-  } catch { /* ignore */ }
-}
-
-export function getUserSensitivity() {
-  return getUserProfile().sensitivityLevel;
-}
-
-// ── Time Category Helper ───────────────────────────────────────────────────────
-
-function getTimeCategory(hour) {
-  if (hour >= 5 && hour < 12) return 'morning';
-  if (hour >= 12 && hour < 17) return 'afternoon';
-  if (hour >= 17 && hour < 20) return 'evening';
-  if (hour >= 20 && hour < 23) return 'night';
-  return 'late_night';
-}
-
-// ── Hook ───────────────────────────────────────────────────────────────────────
+import { useState, useCallback, useRef } from 'react';
+import * as AIGuardian from '../lib/AIGuardian.js';
+import { extractPatterns, getTimeCategory, countIncidentTypes, countRecentIncidents } from '../lib/PredictiveEngine.js';
+import { getUserSensitivity } from '../lib/userProfile.js';
 
 export function useAIGuardian() {
-  // Individual AI outputs
+  // ── Individual states for progressive loading ─────────────────────────────
   const [contextAnalysis, setContextAnalysis] = useState(null);
-  const [riskReasoning, setRiskReasoning] = useState(null);
-  const [recommendations, setRecommendations] = useState(null);
-  const [trendAnalysis, setTrendAnalysis] = useState(null);
-  const [forecast, setForecast] = useState(null);
-  const [narrative, setNarrative] = useState(null);
-
-  // Individual loading states for progressive rendering
   const [contextLoading, setContextLoading] = useState(false);
-  const [reasoningLoading, setReasoningLoading] = useState(false);
-  const [recommendationsLoading, setRecommendationsLoading] = useState(false);
-  const [trendLoading, setTrendLoading] = useState(false);
+
+  const [riskReasoning, setRiskReasoning] = useState(null);
+  const [riskLoading, setRiskLoading] = useState(false);
+
+  const [recommendations, setRecommendations] = useState(null);
+  const [recsLoading, setRecsLoading] = useState(false);
+
+  const [forecast, setForecast] = useState(null);
   const [forecastLoading, setForecastLoading] = useState(false);
+
+  const [narrative, setNarrative] = useState(null);
   const [narrativeLoading, setNarrativeLoading] = useState(false);
 
-  // Abort pattern
+  const [trendAnalysis, setTrendAnalysis] = useState(null);
+  const [trendLoading, setTrendLoading] = useState(false);
+
+  // Abort tracking
   const abortRef = useRef(null);
-  const trendCacheRef = useRef({ count: 0, result: null });
+  const trendIncidentCountRef = useRef(0);
 
   /**
-   * Build context payload from route data.
+   * Build the context payload from available data.
    */
   const buildContextPayload = useCallback((params) => {
     const { sliderHour, incidents, nearbyIncidents, routeDistanceKm, origin, destination } = params;
-    const profile = getUserProfile();
-
-    const incidentTypes = { poor_lighting: 0, isolated: 0, harassment_history: 0 };
-    for (const inc of nearbyIncidents) {
-      if (incidentTypes[inc.type] !== undefined) {
-        incidentTypes[inc.type]++;
-      }
-    }
-
-    const now = Date.now();
-    const recentIncidents = nearbyIncidents.filter((i) => {
-      if (!i.timestamp) return false;
-      const ms = i.timestamp.toMillis ? i.timestamp.toMillis() :
-        (i.timestamp instanceof Date ? i.timestamp.getTime() :
-          (typeof i.timestamp?.seconds === 'number' ? i.timestamp.seconds * 1000 : 0));
-      return now - ms < 86400000;
-    }).length;
+    const now = new Date();
+    const dayOfWeek = now.getDay();
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
     return {
       hour: sliderHour,
-      dayOfWeek: new Date().getDay(),
-      isWeekend: [0, 6].includes(new Date().getDay()),
+      dayOfWeek,
+      isWeekend,
       timeCategory: getTimeCategory(sliderHour),
       incidentDensity: nearbyIncidents.length,
-      incidentTypes,
-      recentIncidents,
+      incidentTypes: countIncidentTypes(nearbyIncidents),
+      recentIncidents: countRecentIncidents(incidents),
       routeDistanceKm: routeDistanceKm || 0,
       origin,
       destination,
-      userSensitivity: profile.sensitivityLevel,
+      userSensitivity: getUserSensitivity(),
     };
   }, []);
 
   /**
-   * Run the full AI pipeline on route submit.
-   * Steps 1+4 parallel → Step 2 → Step 3 → Step 5
+   * ON APP LOAD — Analyze trends (cached, re-called only if count changes by >2).
+   */
+  const runTrendAnalysis = useCallback(async (incidents) => {
+    const countDiff = Math.abs(incidents.length - trendIncidentCountRef.current);
+    if (trendAnalysis && countDiff <= 2) return; // Use cached
+
+    trendIncidentCountRef.current = incidents.length;
+    setTrendLoading(true);
+    try {
+      const result = await AIGuardian.analyzeTrends(incidents);
+      setTrendAnalysis(result);
+    } catch (err) {
+      console.error('[useAIGuardian] trend analysis error:', err);
+    } finally {
+      setTrendLoading(false);
+    }
+  }, [trendAnalysis]);
+
+  /**
+   * ON ROUTE SUBMIT — Full 5-step orchestration pipeline.
+   *
+   * Step 1: analyzeContext + Step 4: predictFutureRisk  (parallel)
+   * Step 2: reasonRisk (needs Step 1)
+   * Step 3: getRecommendations (needs Step 2)
+   * Step 5: explainInNaturalLanguage (needs all)
    */
   const runFullPipeline = useCallback(async (params) => {
+    const { sliderHour, incidents, nearbyIncidents, routeDistanceKm, origin, destination } = params;
+
+    // Abort tracking
     const thisCall = {};
     abortRef.current = thisCall;
 
-    // Clear previous results
+    // Build context payload
+    const contextPayload = buildContextPayload(params);
+
+    // Extract patterns for predictions
+    const patterns = extractPatterns(incidents);
+
+    const routeInfo = { origin, destination, distanceKm: routeDistanceKm };
+
+    // Reset all states
     setContextAnalysis(null);
     setRiskReasoning(null);
     setRecommendations(null);
     setForecast(null);
     setNarrative(null);
 
-    // Set all loading states
+    // Set all loading
     setContextLoading(true);
-    setReasoningLoading(true);
-    setRecommendationsLoading(true);
+    setRiskLoading(true);
+    setRecsLoading(true);
     setForecastLoading(true);
     setNarrativeLoading(true);
 
-    const { sliderHour, incidents, nearbyIncidents, routeDistanceKm, origin, destination } = params;
-    const contextPayload = buildContextPayload(params);
-    const routeInfo = { origin, destination, distanceKm: routeDistanceKm };
-    const patterns = extractPatterns(incidents);
-
     try {
-      // Step 1 + Step 4 in parallel
+      // ── Step 1 + Step 4 in parallel ─────────────────────────────────────
       const [ctxResult, forecastResult] = await Promise.all([
-        analyzeContext(contextPayload),
-        predictFutureRisk(routeInfo, nearbyIncidents, patterns),
+        AIGuardian.analyzeContext(contextPayload),
+        AIGuardian.predictFutureRisk(routeInfo, nearbyIncidents, patterns),
       ]);
 
       if (abortRef.current !== thisCall) return;
@@ -156,103 +125,87 @@ export function useAIGuardian() {
       setForecast(forecastResult);
       setForecastLoading(false);
 
-      // Step 2: reasonRisk (needs context)
-      const riskResult = await reasonRisk(routeInfo, nearbyIncidents, ctxResult);
+      // ── Step 2: reasonRisk (needs context) ──────────────────────────────
+      const riskResult = await AIGuardian.reasonRisk(routeInfo, nearbyIncidents, ctxResult);
+
       if (abortRef.current !== thisCall) return;
 
       setRiskReasoning(riskResult);
-      setReasoningLoading(false);
+      setRiskLoading(false);
 
-      // Step 3: getRecommendations (needs risk reasoning)
-      const recsResult = await getRecommendations(riskResult);
+      // ── Step 3: getRecommendations (needs risk) ─────────────────────────
+      const recsResult = await AIGuardian.getRecommendations(riskResult);
+
       if (abortRef.current !== thisCall) return;
 
       setRecommendations(recsResult);
-      setRecommendationsLoading(false);
+      setRecsLoading(false);
 
-      // Step 5: explainInNaturalLanguage (needs all above)
-      const profile = getUserProfile();
-      const narrativeResult = await explainInNaturalLanguage({
+      // ── Step 5: explainInNaturalLanguage (needs all) ────────────────────
+      const narrativeResult = await AIGuardian.explainInNaturalLanguage({
         contextAnalysis: ctxResult,
         riskReasoning: riskResult,
         recommendations: recsResult,
-        trendAnalysis: trendAnalysis,
+        trendAnalysis,
         forecast: forecastResult,
-        userSensitivity: profile.sensitivityLevel,
+        userSensitivity: getUserSensitivity(),
       });
+
       if (abortRef.current !== thisCall) return;
 
       setNarrative(narrativeResult);
       setNarrativeLoading(false);
+
     } catch (err) {
-      console.error('[useAIGuardian] Pipeline error:', err);
+      console.error('[useAIGuardian] pipeline error:', err);
+      // Ensure loading states are cleared
       setContextLoading(false);
-      setReasoningLoading(false);
-      setRecommendationsLoading(false);
+      setRiskLoading(false);
+      setRecsLoading(false);
       setForecastLoading(false);
       setNarrativeLoading(false);
     }
   }, [buildContextPayload, trendAnalysis]);
 
   /**
-   * Run only context + risk reasoning on slider change (Steps 1-2).
+   * ON TIME SLIDER CHANGE — Re-run Steps 1-2 only.
    */
   const runSliderUpdate = useCallback(async (params) => {
+    const { sliderHour, incidents, nearbyIncidents, routeDistanceKm, origin, destination } = params;
+
     const thisCall = {};
     abortRef.current = thisCall;
 
-    setContextLoading(true);
-    setReasoningLoading(true);
-
     const contextPayload = buildContextPayload(params);
-    const { origin, destination, routeDistanceKm, nearbyIncidents } = params;
     const routeInfo = { origin, destination, distanceKm: routeDistanceKm };
 
+    setContextLoading(true);
+    setRiskLoading(true);
+
     try {
-      // Step 1: context
-      const ctxResult = await analyzeContext(contextPayload);
+      // Step 1: analyzeContext
+      const ctxResult = await AIGuardian.analyzeContext(contextPayload);
       if (abortRef.current !== thisCall) return;
 
       setContextAnalysis(ctxResult);
       setContextLoading(false);
 
-      // Step 2: risk reasoning
-      const riskResult = await reasonRisk(routeInfo, nearbyIncidents, ctxResult);
+      // Step 2: reasonRisk
+      const riskResult = await AIGuardian.reasonRisk(routeInfo, nearbyIncidents, ctxResult);
       if (abortRef.current !== thisCall) return;
 
       setRiskReasoning(riskResult);
-      setReasoningLoading(false);
+      setRiskLoading(false);
+
     } catch (err) {
-      console.error('[useAIGuardian] Slider update error:', err);
+      console.error('[useAIGuardian] slider update error:', err);
       setContextLoading(false);
-      setReasoningLoading(false);
+      setRiskLoading(false);
     }
   }, [buildContextPayload]);
 
   /**
-   * Run trend analysis (called once on app load, cached until count changes by > 2).
-   */
-  const runTrendAnalysis = useCallback(async (incidents) => {
-    const cachedCount = trendCacheRef.current.count;
-    if (trendCacheRef.current.result && Math.abs(incidents.length - cachedCount) <= 2) {
-      setTrendAnalysis(trendCacheRef.current.result);
-      return;
-    }
-
-    setTrendLoading(true);
-    try {
-      const result = await analyzeTrends(incidents);
-      trendCacheRef.current = { count: incidents.length, result };
-      setTrendAnalysis(result);
-    } catch (err) {
-      console.error('[useAIGuardian] Trend analysis error:', err);
-    } finally {
-      setTrendLoading(false);
-    }
-  }, []);
-
-  /**
-   * Clear all AI state (e.g. on route clear).
+   * Clear all AI state (e.g., on route clear).
    */
   const clearAll = useCallback(() => {
     abortRef.current = null;
@@ -262,33 +215,25 @@ export function useAIGuardian() {
     setForecast(null);
     setNarrative(null);
     setContextLoading(false);
-    setReasoningLoading(false);
-    setRecommendationsLoading(false);
+    setRiskLoading(false);
+    setRecsLoading(false);
     setForecastLoading(false);
     setNarrativeLoading(false);
   }, []);
 
   return {
-    // Data
-    contextAnalysis,
-    riskReasoning,
-    recommendations,
-    trendAnalysis,
-    forecast,
-    narrative,
-
-    // Loading states
-    contextLoading,
-    reasoningLoading,
-    recommendationsLoading,
-    trendLoading,
-    forecastLoading,
-    narrativeLoading,
+    // State
+    contextAnalysis, contextLoading,
+    riskReasoning, riskLoading,
+    recommendations, recsLoading,
+    forecast, forecastLoading,
+    narrative, narrativeLoading,
+    trendAnalysis, trendLoading,
 
     // Actions
+    runTrendAnalysis,
     runFullPipeline,
     runSliderUpdate,
-    runTrendAnalysis,
     clearAll,
     buildContextPayload,
   };
